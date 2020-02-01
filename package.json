@@ -1,0 +1,42 @@
+{
+    "name":                 "coworker",
+    "version":              null,
+    "private":              true,
+    "description":
+
+      "A Multi-Paxos implementation in pure JavaScript.",
+
+    "keywords":
+    [
+                            "consensus"
+    ],
+    "author":               "Alan Gutierrez <alan@prettyrobots.com>",
+    "contributors":
+    [{
+                            "name":  "Demarius Chrite",
+                            "email": "chrite.demarius@gmail.com",
+                            "web":   "https://github.com/demarius"
+    }],
+    "homepage":             "https://bigeasy.github.io/coworker",
+    "bugs":                 "https://github.com/bigeasy/coworker/issues",
+    "license":              "MIT",
+    "repository":
+    {
+                            "type": "git",
+                            "url": "bigeasy/coworker"
+    },
+    "dependencies":
+    {
+                            "avenue":                       "^0.2.0-alpha.0",
+                            "bintrees":                     "1.0.2"
+    },
+    "devDependencies":
+    {
+                            "proof":                        "^8.0.0-alpha.7"
+    },
+    "main":                 "coworker",
+    "scripts":
+    {
+                            "test": "proof test/*.t.js"
+    }
+}
