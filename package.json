@@ -28,7 +28,8 @@
     "dependencies":
     {
                             "avenue":                       "^0.2.0-alpha.0",
-                            "bintrees":                     "1.0.2"
+                            "bintrees":                     "1.0.2",
+                            "paxos":                        "19.0.0-alpha.5"
     },
     "devDependencies":
     {
