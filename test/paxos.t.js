@@ -72,4 +72,5 @@ function prove (okay) {
         promise: '1/1',
         body: 1
     }, 'enqueue 4')
+    routers[0].arrive([ 1, 1, 1, 1, 0, 0, 0, 0 ])
 }

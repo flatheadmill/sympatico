@@ -33,6 +33,9 @@ class Router {
         this.buckets.forEach((paxos, index) => paxos.bootstrap(now, ([ this.address, index ]).join('/'), {}))
     }
 
+    arrive (table) {
+    }
+
     route (machines, table) {
     }
 
