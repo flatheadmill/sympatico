@@ -29,6 +29,8 @@
     {
                             "avenue":                       "^0.2.0-alpha.0",
                             "bintrees":                     "1.0.2",
+                            "cubbyhole":                    "3.0.0-alpha.3",
+                            "destructible":                 "5.2.0-alpha.5",
                             "hash.fnv":                     "^1.0.7",
                             "keyify":                       "^2.0.3",
                             "paxos":                        "^19.0.0-alpha.5"

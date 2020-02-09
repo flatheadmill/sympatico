@@ -9,83 +9,68 @@ const assert = require('assert')
 
 const Avenue = require('avenue')
 const Monotonic = require('paxos/monotonic')
+const events = require('events')
 
-function okay (addresses) {
-    const responses = {}
-    for (const to of addresses) {
-        responses[to] = true
-    }
-    return responses
-}
-
-class Paxos {
-    constructor (address, bucket) {
+class Paxos extends events.EventEmitter {
+    constructor (destructible, transport, address, bucket) {
+        super()
         this.address = address
         this.bucket = bucket
-        this.id = ([ address, bucket ]).join('/')
         this.government = {
             promise: '0/0',
             majority: []
         }
-        this.log = new Avenue().sync
-        this.outbox = new Avenue().sync
+        this.log = new Avenue()
+        this.snapshot = new Avenue()
+        this.outbox = new Avenue()
         this._tail = this.log.shifter().sync
-        this.pinged = new Avenue().sync
+        this.pinged = new Avenue()
+        this.destroyed = false
         this._writes = []
+        this._transport = transport
+        destructible.durable('paxos', this._send.bind(this))
+        destructible.destruct(() => {
+            this.destroyed = true
+            transport.notify('send', address, bucket)
+        })
     }
 
-    bootstrap (now, address, properties) {
+    bootstrap () {
         this.government = {
             promise: '1/0',
-            majority: [ address ],
+            majority: [ this.address ],
             minority: [],
             constituents: [],
-            acclimate: address,
-            arrive: { id: this.id, properties: properties, cookie: 0 },
+            acclimate: this.address,
+            arrive: { id: this.address, properties: {}, cookie: 0 },
             arrived: { promise: {}, id: {} }
         }
         this._top = '1/0'
         this.promise = '1/0'
-        this.government.arrived.promise[address] = '1/0'
-        this.government.arrived.id['1/0'] = address
+        this.government.arrived.promise[this.address] = '1/0'
+        this.government.arrived.id['1/0'] = this.address
         this.log.push({ isGovernment: true, promise: '1/0', body: this.government })
     }
 
-    join (address, properties) {
+    join () {
         this._top = '0/0'
     }
 
-    _send () {
-        this.outbox.push({
-            to: this.government.majority.slice(),
-            bucket: this.bucket,
-            messages: this._writes.shift(),
-            responses: {}
-        })
-    }
-
-    _nudge () {
-        if (!this._writing) {
-            this._writing = true
-            this._send()
-        }
-    }
 
     // Need to use the hegemonic promise as some sort of veto, I'll bet. Keep the
     // internal promise separate because I've just adopted this transitional
     // government scheme. We'll call the hegemonic promise the identifier.
     arrive (identifier, majority) {
         const promise = this._top
-        const tails = {}
-        for (const arrival of diff) {
-            tails[arrival] = this._tail.shifter().sync
-            while (tail.peek() != promise) {
-                tail.shift()
-            }
+        const diff = majority.filter(address => !this.government.majority.includes(address))
+        const tail = this._tail.shifter().sync
+        while (tail.peek().promise != promise) {
+            assert(tail.peek())
+            tail.shift()
         }
-        this._arrival = { identifier, diff, promise, tails, snapshot: null }
-        this.arrivals.push({ promise, majority })
-        this.log.push({ method: 'snapshot', promise })
+        tail.shift()
+        this._arrival = { identifier, diff, promise, tail, snapshot: null }
+        this.snapshot.push({ method: 'snapshot', to: diff, bucket: this.bucket, promise })
     }
 
     // Note that for surge replace we're going to do things at the router level.
@@ -146,53 +131,47 @@ class Paxos {
         this._nudge()
     }
 
-    // Kick off the snapshot transfer with a bogus first response which will
-    // start an asynchronous loop to send json chunks one at a time.
-    snapshot (promise, snapshot) {
-        if (this._snapshot != null && this._snapshot.promise == promise) {
-            this._snapshot.shifter = snapshot.shifter()
-            this._send({
-                to: diff,
-                bucket: this.bucket,
-                messages: [{ method: 'snapshot', promise, body: true }],
-                responses: okay(diff)
-            })
-        }
-    }
-
     receive (messages) {
         for (const message of messages) {
             switch (message.method) {
             case 'write':
-                console.log('>>>', message)
                 this._write = message
-                return true
+                break
             case 'commit':
-                console.log('commit >>>', message, this._write)
                 const write = this._write
                 this._write = null
                 this._commit(0, write, this._top)
-                return true
+                break
+            default:
+                throw new Error(message.method)
             }
         }
+        return true
     }
 
     enqueue (now, body) {
         const promise = this.promise = Monotonic.increment(this.promise, 1)
         this._writes.push([{ method: 'write', promise, isGovernment: false, body }])
-        this._nudge()
+        this._transport.notify('send', this.address, this.bucket)
     }
 
-    _findRound = function (sought) {
-        const shifter = this._tail.shifter().sync
-        while (shifter.peek().promise != sought) {
-            shifter.shift()
+    async snapshotted (identifier) {
+        for (const splice of this._arrival.tail.iterator(32)) {
+            await this._transport.send({
+                to: this._arrival.diff,
+                bucket: this.bucket,
+                messages: splice.reduce((messages, entry) => {
+                    return messages.concat({
+                        method: 'write', ...entry
+                    }, {
+                        method: 'commit', promise: entry.promise
+                    })
+                }, [])
+            })
         }
-        return shifter
     }
 
     _commit (now, entry, top) {
-        console.log(entry)
         const isGovernment = Monotonic.isGovernment(entry.promise)
 
         if (Monotonic.compare(entry.promise, top) <= 0) {
@@ -210,7 +189,6 @@ class Paxos {
                 }
             }
         } else {
-            console.log('else', entry)
             this._top = entry.promise
             this.log.push({
                 promise: entry.promise,
@@ -220,8 +198,18 @@ class Paxos {
         }
     }
 
-    sent (envelope) {
-        if (envelope.to.reduce((success, to) => envelope.responses[to], true)) {
+    async _send () {
+        while (!this.destroyed) {
+            if (this._writes.length == 0) {
+                await this._transport.wait('send', this.address, this.bucket)
+                continue
+            }
+            const envelope = {
+                to: this.government.majority.slice(),
+                bucket: this.bucket,
+                messages: this._writes.shift()
+            }
+            const responses = await this._transport.send(envelope)
             const messages = []
             for (const message of envelope.messages) {
                 if (message.method == 'write') {
@@ -241,65 +229,11 @@ class Paxos {
                         }
                     }
                 } else if (message.method == 'government') {
-                } else if (this._snapshot != null && this._snapshot.promise == message.promise) {
-                    switch (message.method) {
-                    case 'snapshot':
-                        if (message.body == null) {
-                            this._send({
-                                to: envelope.to,
-                                bucket: envelope.bucket,
-                                messages: [{ method: 'synchronize', promise: message.promise }],
-                                response: okay(envelope.to)
-                            })
-                        } else {
-                            const body = this._snapshot.shifter.shift()
-                            this.outbox.push({
-                                to: envelope.to,
-                                bucket: envelope.bucket,
-                                messages: [{
-                                    method: 'snapshot',
-                                    promise: message.promise,
-                                    body: this._snapshot.shifter.shift()
-                                }],
-                                responses: {}
-                            })
-                        }
-                        break
-                    case 'synchronize':
-                        const messages = []
-                        for (const entry of this._snapshot.tails[this._snapshot.promise].splice(32)) {
-                            messages.push({
-                                method: 'write', ...entry
-                            }, {
-                                method: 'commit', promise: entry.promise
-                            })
-                        }
-                        // We've caught up, more or less, so let's change our
-                        // government. We change to a government where we are
-                        // still the leader, but we are waiting for all the
-                        // participants to acclimate, so we're going to be the
-                        // leader and update members of both governments.
-                        if (messages.length < 32) {
-                            const snapshot = this._snapshot
-                            this._snapshot = null
-                            const government = newGovernent(this._snapshot.minority)
-                        } else {
-                            this.outbox.push({
-                                to: envelope.to,
-                                bucket: envelope.bucket,
-                                messages: messages
-                            })
-                        }
-                    }
                 }
             }
             if (this._writes.length != 0) {
-                this._send()
-            } else {
-                this._writing = false
+                this._transport.notify('send', this.address, this.bucket)
             }
-        } else {
-            throw new Error
         }
     }
 }
