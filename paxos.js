@@ -26,7 +26,7 @@ class Paxos extends events.EventEmitter {
         this._tail = this.log.shifter().sync
         this.pinged = new Avenue()
         this.destroyed = false
-        this._writes = []
+        this._writes = [ [] ]
         this._transport = transport
         destructible.durable('paxos', this._send.bind(this))
         destructible.destruct(() => {
@@ -151,22 +151,37 @@ class Paxos extends events.EventEmitter {
 
     enqueue (now, body) {
         const promise = this.promise = Monotonic.increment(this.promise, 1)
-        this._writes.push([{ method: 'write', promise, isGovernment: false, body }])
+        this._writes[this._writes.length - 1].push({
+            messages: [{ method: 'write', promise, isGovernment: false, body }]
+        })
         this._transport.notify('send', this.address, this.bucket)
     }
 
     async snapshotted (identifier) {
         for (const splice of this._arrival.tail.iterator(32)) {
+            const messages = splice.reduce((messages, entry) => {
+                return messages.concat({
+                    method: 'write', ...entry
+                }, {
+                    method: 'commit', promise: entry.promise
+                })
+            }, [])
+            if (splice.length < 32) {
+                if (this._write != null) {
+                    messages.push(this._write)
+                }
+                this._writes.unshift([{
+                    to: this._arrival.diff,
+                    bucke: this.bucket,
+                    messages: messages
+                }])
+                this._transport.notify('send', this.address, this.bucket)
+                break
+            }
             await this._transport.send({
                 to: this._arrival.diff,
                 bucket: this.bucket,
-                messages: splice.reduce((messages, entry) => {
-                    return messages.concat({
-                        method: 'write', ...entry
-                    }, {
-                        method: 'commit', promise: entry.promise
-                    })
-                }, [])
+                messages: messages
             })
         }
     }
@@ -200,35 +215,41 @@ class Paxos extends events.EventEmitter {
 
     async _send () {
         while (!this.destroyed) {
-            if (this._writes.length == 0) {
+            if (this._writes[0].length == 0 && this._writes.length != 1) {
+                this._writes.shift()
+            }
+            if (this._writes[0].length == 0) {
                 await this._transport.wait('send', this.address, this.bucket)
                 continue
             }
+            const write = this._writes[0].shift()
             const envelope = {
-                to: this.government.majority.slice(),
+                to: write.to || this.government.majority.slice(),
                 bucket: this.bucket,
-                messages: this._writes.shift()
+                messages: write.messages
             }
+            const leader = envelope.to.indexOf(this.address)
+            if (~leader) {
+                assert.equal(leader, 0, 'leader is not first in majority')
+                envelope.to.shift()
+                this.receive(envelope.messages)
+            }
+            // Hmm... The `responses` map isn't making much senese anymore.
+            // Maybe throw an exception? Or just return false? Oh, no. Someone
+            // you speak with might be ahead of you, so it would return a
+            // rejection, and that is not an exceptional condition, really.
             const responses = await this._transport.send(envelope)
-            const messages = []
-            for (const message of envelope.messages) {
-                if (message.method == 'write') {
-                    messages.push({
-                        to: envelope.to,
-                        bucket: envelope.bucket,
-                        message: {
-                            method: 'commit',
-                            promise: message.promise
-                        }
-                    })
-                    if (this._writes.length == 0) {
-                        this._writes.push([{ method: 'commit', promise: message.promise }])
-                    } else {
-                        while (messages.length != 0) {
-                            this._writes[0].messages.unshift(messages.pop())
+            if (~leader) {
+                const messages = []
+                for (const message of envelope.messages) {
+                    if (message.method == 'write') {
+                        const commit = { method: 'commit', promise: message.promise }
+                        if (this._writes[this._writes.length - 1].length == 0) {
+                            this._writes[this._writes.length - 1].push({ messages: [ commit ] })
+                        } else {
+                            this._writes[this._writes.length - 1].messages.unshift(commit)
                         }
                     }
-                } else if (message.method == 'government') {
                 }
             }
             if (this._writes.length != 0) {
