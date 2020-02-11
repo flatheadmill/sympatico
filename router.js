@@ -1,17 +1,19 @@
 const assert = require('assert')
 
-const fnv = require('hash.fnv')
+const coalesce = require('extant')
+const fnv = require('./fnv')
 const Keyify = require('keyify')
 
 const Paxos = require('./paxos')
 
 class Router {
-    constructor (destructible, extractor, transport, bucketCount, address) {
+    constructor (destructible, { extractor, hash, transport, buckets, address }) {
         this.address = address
         this.buckets = []
         this.shifters = []
+        this._hash = coalesce(hash, fnv)
         this._extractor = extractor
-        for (let i = 0; i < bucketCount; i++) {
+        for (let i = 0; i < buckets; i++) {
             const paxos = new Paxos(destructible.durable([ 'paxos', i ]), transport, address, i)
             this.shifters.push(paxos.log.shifter().sync)
             this.buckets.push(paxos)
@@ -37,7 +39,7 @@ class Router {
         this.buckets.forEach((paxos, index) => paxos.bootstrap())
     }
 
-    join (now, ordered, table) {
+    join (ordered, table) {
         this.ordered = ordered
         this.table = table
         this.buckets.forEach((paxos, index) => paxos.join())
@@ -48,6 +50,7 @@ class Router {
         case 1:
             break
         case 2:
+            console.log(this.table)
             const majorities = table
                 .map((value, index) => [ index, [ value, order[(order.indexOf(value) + 1) % 2] ] ])
                 .filter((_, index) => this.table[index] == this.address)
@@ -63,13 +66,11 @@ class Router {
     }
 
     _leader (value) {
-        const buffer = Buffer.from(Keyify.stringify(value))
-        const hash = fnv(0, buffer, 0, buffer.length)
-        return hash % this.table.length
+        return this._hash.call(null, this._extractor.call(null, value)) % this.table.length
     }
 
     hopped (now, value) {
-        const paxos = this.buckets[this._leader(this._extractor.call(null, value))]
+        const paxos = this.buckets[this._leader(value)]
         paxos.enqueue(now, value)
     }
 
@@ -78,7 +79,7 @@ class Router {
     }
 
     enqueue (now, value) {
-        const leader = this.table[this._leader(this._extractor.call(null, value))]
+        const leader = this.table[this._leader(value)]
         if (leader == this.address) {
             this.hopped(now, value)
         } else {

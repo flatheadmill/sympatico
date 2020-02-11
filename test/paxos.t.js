@@ -23,7 +23,7 @@ async function test (okay, routers) {
     routers[0].enqueue(0, { key: 1, value: 'a' })
     // routers[1].route([ 0, 1 ], [ 1, 1, 1, 1, 0, 0, 0, 0 ])
     // routers[1].route([ 0, 1 ], [ 1, 1, 1, 1, 0, 0, 0, 0 ])
-    okay(await entries[0][4].shift(), {
+    okay(await entries[0][1].shift(), {
         isGovernment: true,
         promise: '1/0',
         body: {
@@ -38,31 +38,32 @@ async function test (okay, routers) {
             }
         }
     }, 'bootstrapped 4')
-    okay(await entries[0][4].shift(), {
+    okay(await entries[0][1].shift(), {
         isGovernment: false,
         promise: '1/1',
         body: { key: 1, value: 'a' },
     }, 'enqueue 4')
     routers[1].join('1/0', [ 0, 0, 0, 0, 0, 0, 0, 0 ])
     routers[0].arrive('2/0', [ 0, 1 ], [ 1, 1, 1, 1, 0, 0, 0, 0 ])
-    okay(await snapshots[0][4].shift(), {
+    okay(await snapshots[0][1].shift(), {
         method: 'snapshot',
         to: [ 1 ],
-        bucket: 4,
+        bucket: 1,
         promise: '1/1'
     }, 'snapshot 1 4')
     routers[0].enqueue(0, { key: 1, value: 'b' })
-    okay(await entries[0][4].shift(), {
+    okay(await entries[0][1].shift(), {
         isGovernment: false,
         promise: '1/2',
         body: { key: 1, value: 'b' },
-    }, 'enqueue 4')
-    await routers[0].snapshotted(4, '1/1')
-    okay(await entries[1][4].shift(), {
+    }, 'enqueue 0 1 4')
+    await routers[0].snapshotted(1, '1/1')
+    okay(await entries[1][1].shift(), {
         isGovernment: false,
         promise: '1/2',
         body: { key: 1, value: 'b' }
-    }, 'enqueue 4')
+    }, 'enqueue 1 1 4')
+    routers[1].arrive('2/0', [ 0, 1 ], [ 1, 1, 1, 1, 0, 0, 0, 0 ])
 }
 
 async function prove (okay) {
@@ -116,7 +117,13 @@ async function prove (okay) {
     const Router = require('../router')
     const routers = []
     for (let i = 0; i < 3; i++) {
-        routers.push(new Router(destructible.durable([ 'router', i ]), extractor, transport, 8, i))
+        routers.push(new Router(destructible.durable([ 'router', i ]), {
+            extractor: extractor,
+            transport: transport,
+            hash: value => value,
+            buckets: 8,
+            address: i
+        }))
     }
     destructible.durable('test', test(okay, routers))
     await destructible.destructed

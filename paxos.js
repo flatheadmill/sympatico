@@ -69,7 +69,10 @@ class Paxos extends events.EventEmitter {
             tail.shift()
         }
         tail.shift()
-        this._arrival = { identifier, majority, diff, promise, tail, snapshot: null }
+        this._arrival = {
+            state: 'snapshotting',
+            identifier, majority, diff, promise, tail
+        }
         this.snapshot.push({ method: 'snapshot', to: diff, bucket: this.bucket, promise })
     }
 
@@ -156,6 +159,7 @@ class Paxos extends events.EventEmitter {
                 })
             }, [])
             if (splice.length < 32) {
+                this._arrival.tail = null
                 if (this._write != null) {
                     messages.push(this._write)
                 }
@@ -163,7 +167,7 @@ class Paxos extends events.EventEmitter {
                 // there is only one message here.
                 assert(this._writes[0].length == 0 || this._writes[0].messages.length == 1)
                 const government = this._government(this._arrival.majority, this.government.majority)
-                this._arrival.state = this.government.majority[0] == this.address ? 'reformed' : 'abidcated'
+                this._arrival.state = government.majority[0] == this.address ? 'reformed' : 'abdicated'
                 this._arrival.backlog = this._writes[0]
                 this._writes[0] = [{
                     to: ([ this.address ]).concat(government.majority.filter(address => address != this.address)),
