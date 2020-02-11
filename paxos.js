@@ -69,7 +69,7 @@ class Paxos extends events.EventEmitter {
             tail.shift()
         }
         tail.shift()
-        this._arrival = { identifier, diff, promise, tail, snapshot: null }
+        this._arrival = { identifier, majority, diff, promise, tail, snapshot: null }
         this.snapshot.push({ method: 'snapshot', to: diff, bucket: this.bucket, promise })
     }
 
@@ -108,27 +108,13 @@ class Paxos extends events.EventEmitter {
     // know that everyone has the same list of tables.
     //
     // But, we don't abort the creation of a government. Too annoying.
-    _newGovernment (majority) {
-        let map = null
-        if (this._writes.length && this._writes[0].isGovernment) {
-            const mapped = this._writes.shift().government.map
-            for (const was of mapped) {
-                map[mapped[was]] = was
-            }
-        }
-        majority = majority.concat(this.majority)
-        majority = majority.filter((id, index) => majority.indexOf(id) == index)
+    _government (next, previous) {
         const government = JSON.parse(JSON.stringify(this.government))
+        const combined = next.concat(previous)
+        const majority = combined.filter((address, index) => combined.indexOf(address) == index)
         government.majority = majority
         government.promise = Monotonic.increment(government.promise, 0)
-        government.map = {}
-        let promise = government.promise
-        for (const write in this._writes) {
-            promise = Monotonic.increment(promise, 1)
-            government.map[map[write.promise] || write.promise] = promise
-        }
-        this._writes.unshift({ isGovernment: true, map, promise, body: government })
-        this._nudge()
+        return government
     }
 
     receive (messages) {
@@ -149,6 +135,9 @@ class Paxos extends events.EventEmitter {
         return true
     }
 
+    // We set a new government the moment we can abidcate and then hop
+    // everything, so maybe no more map, but a history attached to the promise,
+    // if we are still sending promises back.
     enqueue (now, body) {
         const promise = this.promise = Monotonic.increment(this.promise, 1)
         this._writes[this._writes.length - 1].push({
@@ -170,6 +159,19 @@ class Paxos extends events.EventEmitter {
                 if (this._write != null) {
                     messages.push(this._write)
                 }
+                // We're not going to pushback a commit. We can assert that
+                // there is only one message here.
+                assert(this._writes[0].length == 0 || this._writes[0].messages.length == 1)
+                const government = this._government(this._arrival.majority, this.government.majority)
+                this._arrival.state = this.government.majority[0] == this.address ? 'reformed' : 'abidcated'
+                this._arrival.backlog = this._writes[0]
+                this._writes[0] = [{
+                    to: ([ this.address ]).concat(government.majority.filter(address => address != this.address)),
+                    bucket: this.bucket,
+                    messages: [{
+                        method: 'write', promise: government.promise, isGovernment: true, government
+                    }]
+                }]
                 this._writes.unshift([{
                     to: this._arrival.diff,
                     bucke: this.bucket,
@@ -178,31 +180,16 @@ class Paxos extends events.EventEmitter {
                 this._transport.notify('send', this.address, this.bucket)
                 break
             }
-            await this._transport.send({
-                to: this._arrival.diff,
-                bucket: this.bucket,
-                messages: messages
-            })
         }
     }
 
     _commit (now, entry, top) {
         const isGovernment = Monotonic.isGovernment(entry.promise)
-
-        if (Monotonic.compare(entry.promise, top) <= 0) {
-            const shifter = this._findRound(entry.promise)
-            assert.deepStrictEqual(shifter.shift().body, entry.body)
-        }
-
         if (isGovernment) {
             assert(Monotonic.compare(this.government.promise, entry.promise) < 0, 'governments out of order')
-            this.government.promise = entry.promise
-            this.government.majority = entry.body.majority
-            if (entry.body.arrive != null) {
-                if (entry.promise == '1/0') {
-                    this.government.majority.push(entry.body.arrive.id)
-                }
-            }
+
+            const collapse = this.government.majority.length > entry.government.majority.length
+            this.government = entry.government
         } else {
             this._top = entry.promise
             this.log.push({
