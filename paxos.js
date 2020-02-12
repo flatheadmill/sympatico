@@ -38,17 +38,10 @@ class Paxos extends events.EventEmitter {
     bootstrap () {
         this.government = {
             promise: '1/0',
-            majority: [ this.address ],
-            minority: [],
-            constituents: [],
-            acclimate: this.address,
-            arrive: { id: this.address, properties: {}, cookie: 0 },
-            arrived: { promise: {}, id: {} }
+            majority: [ this.address ]
         }
         this._top = '1/0'
         this.promise = '1/0'
-        this.government.arrived.promise[this.address] = '1/0'
-        this.government.arrived.id['1/0'] = this.address
         this.log.push({ isGovernment: true, promise: '1/0', body: this.government })
     }
 

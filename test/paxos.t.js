@@ -10,14 +10,7 @@ async function test (okay, routers) {
         promise: '1/0',
         body: {
             promise: '1/0',
-            majority: [ 0 ],
-            minority: [],
-            constituents: [],
-            acclimate: 0,
-            arrive: { id: 0, properties: {}, cookie: 0 },
-            arrived: {
-                promise: { '0': '1/0' }, id: { '1/0': 0 }
-            }
+            majority: [ 0 ]
         }
     }, 'bootstrapped')
     routers[0].enqueue(0, { key: 1, value: 'a' })
@@ -28,14 +21,7 @@ async function test (okay, routers) {
         promise: '1/0',
         body: {
             promise: '1/0',
-            majority: [ 0 ],
-            minority: [],
-            constituents: [],
-            acclimate: 0,
-            arrive: { id: 0, properties: {}, cookie: 0 },
-            arrived: {
-                promise: { '0': '1/0' }, id: { '1/0': 0 }
-            }
+            majority: [ 0 ]
         }
     }, 'bootstrapped 4')
     okay(await entries[0][1].shift(), {
@@ -69,12 +55,7 @@ async function test (okay, routers) {
         promise: '2/0',
         body: {
             promise: '2/0',
-            majority: [ 1, 0 ],
-            minority: [],
-            constituents: [],
-            acclimate: 0,
-            arrive: { id: 0, properties: {}, cookie: 0 },
-            arrived: { promise: { '0': '1/0' }, id: { '1/0': 0 } }
+            majority: [ 1, 0 ]
         }
     }, 'enqueue 1 1 4')
 }
