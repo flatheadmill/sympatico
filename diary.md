@@ -1,3 +1,53 @@
+## Wed Feb 12 01:00:47 CST 2020
+
+Ideally, I'd like to have the messages enqueued in the order in which they are
+received, but there's a problem when a new routing table lands, since it will
+arrive in a different order, so a leader may have a backlog of messages, gets a
+new routing table that will require abdication. The new leader gets the table
+first, so it begins to backlog, or else continues to forward. Well, in any case,
+there is a point where messages are pooling in two places, so two messages for a
+single stream could be in two queues.
+
+We could pause forwarding for two rounds of paxos. One to pause and one to
+resume. The pause begins when the new government countdown completes. The tables
+switch and then then there is a countdown on the switch. Maybe it is a switch
+and flush everyone pauses while the forwarding drains.
+
+Or maybe we can isolate this switch somehow, so it is communication between the
+new leader and the old. The pause is isolated by the bucket.
+
+But, if we hop more than once, we have a race condition. We may not provide a
+stream for HTTP. There is no stream there, is there? But, for the persistent
+connection, yes, that is a stream. And because we're sharded, it is distributed,
+so it does involve everyone, but we can pause and resume a bucket at a time.
+
+Whatever trickery we're using to ensure that messages follow a single route
+through the the cluster can be broken up by bucket. More rounds of Paxos, but
+less chance that a bad government will cause everything to freeze.
+
+And yet, that it spans the entire cluster means one bad actor can pause all
+buckets. A server going down during this pause would have to wait for a Paxos
+timeout and a removal in order for messages to resume.
+
+We could go so far as to back-pressure into the client, too. That's a
+complicated option, but still and option.
+
+There will always be one path though. Where ever the persistent connection lives
+it will move from the old leader to the new leader and it will do so atomically.
+
+The old leader will forward to the new leader while it still gets messages,
+anyone flipping, ah, at the moment of that flip, that is the race. Send one
+message to old leader, old leader forwards. Now send next message to new leader.
+Now we have a race.
+
+Unless we do not queue a new message until the previous one returns. Then we
+have to wait for the hop. So even if we flip, we can't race. Send message to old
+leader, old leader forwards, we get new table, but we don't act on it until the
+forward returns. It only returns when the hop is complete, so the message is in
+the new queue.
+
+## Initial
+
 Essentially, we get a new arrival and we migrate to it. Everyone gets the
 arrival and generates a new routing table. They take snapshots of any of the
 buckets that will transfer to the new participant. The new participant see its
