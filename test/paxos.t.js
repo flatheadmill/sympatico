@@ -1,4 +1,4 @@
-require('proof')(6, prove)
+require('proof')(7, prove)
 
 async function test (okay, routers) {
     // const outboxes = routers.map(router => router.outboxes().map(outbox => outbox.shifter().sync))
@@ -64,6 +64,19 @@ async function test (okay, routers) {
         body: { key: 1, value: 'b' }
     }, 'enqueue 1 1 4')
     routers[1].arrive('2/0', [ 0, 1 ], [ 1, 1, 1, 1, 0, 0, 0, 0 ])
+    okay(await entries[1][1].shift(), {
+        isGovernment: true,
+        promise: '2/0',
+        body: {
+            promise: '2/0',
+            majority: [ 1, 0 ],
+            minority: [],
+            constituents: [],
+            acclimate: 0,
+            arrive: { id: 0, properties: {}, cookie: 0 },
+            arrived: { promise: { '0': '1/0' }, id: { '1/0': 0 } }
+        }
+    }, 'enqueue 1 1 4')
 }
 
 async function prove (okay) {

@@ -193,7 +193,11 @@ class Paxos extends events.EventEmitter {
             assert(Monotonic.compare(this.government.promise, entry.promise) < 0, 'governments out of order')
 
             const collapse = this.government.majority.length > entry.government.majority.length
-            this.government = entry.government
+            this.log.push({
+                promise: entry.promise,
+                isGovernment: true,
+                body: this.government = entry.government
+            })
         } else {
             this._top = entry.promise
             this.log.push({
@@ -219,6 +223,7 @@ class Paxos extends events.EventEmitter {
                 bucket: this.bucket,
                 messages: write.messages
             }
+            const to = envelope.to.slice()
             const leader = envelope.to.indexOf(this.address)
             if (~leader) {
                 assert.equal(leader, 0, 'leader is not first in majority')
@@ -236,7 +241,11 @@ class Paxos extends events.EventEmitter {
                     if (message.method == 'write') {
                         const commit = { method: 'commit', promise: message.promise }
                         if (this._writes[this._writes.length - 1].length == 0) {
-                            this._writes[this._writes.length - 1].push({ messages: [ commit ] })
+                            this._writes[this._writes.length - 1].push({
+                                to: to,
+                                bucket: this.bucket,
+                                messages: [ commit ]
+                            })
                         } else {
                             this._writes[this._writes.length - 1].messages.unshift(commit)
                         }

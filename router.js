@@ -50,7 +50,6 @@ class Router {
         case 1:
             break
         case 2:
-            console.log(this.table)
             const majorities = table
                 .map((value, index) => [ index, [ value, order[(order.indexOf(value) + 1) % 2] ] ])
                 .filter((_, index) => this.table[index] == this.address)
