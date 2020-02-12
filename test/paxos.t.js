@@ -13,7 +13,7 @@ async function test (okay, routers) {
             majority: [ 0 ]
         }
     }, 'bootstrapped')
-    routers[0].enqueue(0, { key: 1, value: 'a' })
+    await routers[0].enqueue({ key: 1, value: 'a' })
     // routers[1].route([ 0, 1 ], [ 1, 1, 1, 1, 0, 0, 0, 0 ])
     // routers[1].route([ 0, 1 ], [ 1, 1, 1, 1, 0, 0, 0, 0 ])
     okay(await entries[0][1].shift(), {
@@ -37,7 +37,7 @@ async function test (okay, routers) {
         bucket: 1,
         promise: '1/1'
     }, 'snapshot 1 4')
-    routers[0].enqueue(0, { key: 1, value: 'b' })
+    await routers[0].enqueue({ key: 1, value: 'b' })
     okay(await entries[0][1].shift(), {
         isGovernment: false,
         promise: '1/2',
@@ -92,6 +92,10 @@ async function prove (okay) {
                 delete semaphores[address][bucket]
                 resolve()
             }
+        }
+
+        enqueue (address, value) {
+            return routers[address].enqueue(value)
         }
 
         send (envelope) {

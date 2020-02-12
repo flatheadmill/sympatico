@@ -13,6 +13,7 @@ class Router {
         this.shifters = []
         this._hash = coalesce(hash, fnv)
         this._extractor = extractor
+        this._transport = transport
         for (let i = 0; i < buckets; i++) {
             const paxos = new Paxos(destructible.durable([ 'paxos', i ]), transport, address, i)
             this.shifters.push(paxos.log.shifter().sync)
@@ -64,24 +65,21 @@ class Router {
     route (machines, table) {
     }
 
-    _leader (value) {
+    _bucket (value) {
         return this._hash.call(null, this._extractor.call(null, value)) % this.table.length
-    }
-
-    hopped (now, value) {
-        const paxos = this.buckets[this._leader(value)]
-        paxos.enqueue(now, value)
     }
 
     snapshotted (bucket, identifier) {
         this.buckets[bucket].snapshotted(identifier)
     }
 
-    enqueue (now, value) {
-        const leader = this.table[this._leader(value)]
-        if (leader == this.address) {
-            this.hopped(now, value)
+    async enqueue (value) {
+        const bucket = this._bucket(value)
+        const address = this.table[bucket]
+        if (address == this.address) {
+            this.buckets[bucket].enqueue(value)
         } else {
+            await this._transport.enqueue(address, value)
         }
     }
 

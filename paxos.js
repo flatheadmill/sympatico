@@ -134,7 +134,7 @@ class Paxos extends events.EventEmitter {
     // We set a new government the moment we can abidcate and then hop
     // everything, so maybe no more map, but a history attached to the promise,
     // if we are still sending promises back.
-    enqueue (now, body) {
+    enqueue (body) {
         const promise = this.promise = Monotonic.increment(this.promise, 1)
         this._writes[this._writes.length - 1].push({
             messages: [{ method: 'write', promise, isGovernment: false, body }]
