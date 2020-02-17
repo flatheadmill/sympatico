@@ -14,8 +14,9 @@ class Router {
         this._hash = coalesce(hash, fnv)
         this._extractor = extractor
         this._transport = transport
+        this._pause = []
         for (let i = 0; i < buckets; i++) {
-            const paxos = new Paxos(destructible.durable([ 'paxos', i ]), transport, address, i)
+            const paxos = new Paxos(destructible.durable([ 'paxos', i ]), transport, this, i)
             this.shifters.push(paxos.log.shifter().sync)
             this.buckets.push(paxos)
         }
@@ -51,6 +52,10 @@ class Router {
         case 1:
             break
         case 2:
+            this.table.forEach((_, index) => {
+                const pause = this._pause[index] = {}
+                pause.promise = new Promise(resolve => pause.resolve = resolve)
+            })
             const majorities = table
                 .map((value, index) => [ index, [ value, order[(order.indexOf(value) + 1) % 2] ] ])
                 .filter((_, index) => this.table[index] == this.address)
@@ -73,13 +78,38 @@ class Router {
         this.buckets[bucket].snapshotted(identifier)
     }
 
+    // When a bucket abdicates, we need to ensure that its message queue is sent
+    // before any other messages are queued. Stream submissions can come in
+    // parallel because each stream will send one at a time, but if we allow our
+    // backlog forward to occur in parallel with new submissions we are racing
+    // enqueued submissions with a possible new submission.
+
+    // This suggests a queue for the hop, where there is only one connection
+    // between each participant for enqueue, or alternatively some way to pause
+    // the hops and using the Paxos channel to send the enqueue.
+
+    // We only have to check the pause if we are in the process of transitioning
+    // a government though.
     async enqueue (value) {
         const bucket = this._bucket(value)
         const address = this.table[bucket]
-        if (address == this.address) {
-            this.buckets[bucket].enqueue(value)
+        const paxos = this.buckets[bucket]
+        if (paxos.government.majority[0] == this.address) {
+            if (address != this.address) {
+                await paxos.pause.allowed('0/0')
+            }
+            paxos.enqueue(value)
         } else {
-            await this._transport.enqueue(address, value)
+            if (address == this.address) {
+                paxos.enqueue(value)
+            } else {
+                await this._transport.enqueue(address, value)
+            }
+            if (paxos.government.majority[0] == this.address) {
+                paxos.enqueue(value)
+            } else {
+                await this._transport.enqueue(paxos.government.majority[0], value)
+            }
         }
     }
 

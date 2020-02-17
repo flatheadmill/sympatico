@@ -10,16 +10,25 @@ const assert = require('assert')
 const Avenue = require('avenue')
 const Monotonic = require('paxos/monotonic')
 const events = require('events')
+const Pause = require('./pause')
+
+const noop = () => {}
+
+function dump (value) {
+    console.log(require('util').inspect(value, { depth: null }))
+}
 
 class Paxos extends events.EventEmitter {
-    constructor (destructible, transport, address, bucket) {
+    constructor (destructible, transport, router, bucket) {
         super()
-        this.address = address
+        this._router = router
         this.bucket = bucket
         this.government = {
             promise: '0/0',
             majority: []
         }
+        this.pause = new Pause
+        this.leader = router.address
         this.log = new Avenue()
         this.snapshot = new Avenue()
         this.outbox = new Avenue()
@@ -31,14 +40,14 @@ class Paxos extends events.EventEmitter {
         destructible.durable('paxos', this._send.bind(this))
         destructible.destruct(() => {
             this.destroyed = true
-            transport.notify('send', address, bucket)
+            transport.notify('send', router.address, bucket)
         })
     }
 
     bootstrap () {
         this.government = {
             promise: '1/0',
-            majority: [ this.address ]
+            majority: [ this._router.address ]
         }
         this._top = '1/0'
         this.promise = '1/0'
@@ -64,6 +73,7 @@ class Paxos extends events.EventEmitter {
         tail.shift()
         this._arrival = {
             state: 'snapshotting',
+            abdicated: this.government.majority[0] != majority[0],
             identifier, majority, diff, promise, tail
         }
         this.snapshot.push({ method: 'snapshot', to: diff, bucket: this.bucket, promise })
@@ -110,9 +120,11 @@ class Paxos extends events.EventEmitter {
         const majority = combined.filter((address, index) => combined.indexOf(address) == index)
         government.majority = majority
         government.promise = Monotonic.increment(government.promise, 0)
+        government.abdication = majority[0] != this._router.address
         return government
     }
 
+    // TODO There is no rejection here. There will have to be some rejection.
     receive (messages) {
         for (const message of messages) {
             switch (message.method) {
@@ -124,6 +136,9 @@ class Paxos extends events.EventEmitter {
                 this._write = null
                 this._commit(0, write, this._top)
                 break
+            case 'unpause':
+                this.pause.allow(message.identifier)
+                break
             default:
                 throw new Error(message.method)
             }
@@ -134,16 +149,28 @@ class Paxos extends events.EventEmitter {
     // We set a new government the moment we can abidcate and then hop
     // everything, so maybe no more map, but a history attached to the promise,
     // if we are still sending promises back.
+
+    //
     enqueue (body) {
         const promise = this.promise = Monotonic.increment(this.promise, 1)
         this._writes[this._writes.length - 1].push({
-            messages: [{ method: 'write', promise, isGovernment: false, body }]
+            messages: [{ method: 'write', promise, isGovernment: false, body }],
+            sent: noop
         })
-        this._transport.notify('send', this.address, this.bucket)
+        this._transport.notify('send', this._router.address, this.bucket)
     }
 
-    async snapshotted (identifier) {
-        for (const splice of this._arrival.tail.iterator(32)) {
+
+    // No idea how long the snapshot is going to take. We may have a significant
+    // backlog of log messages that need to now be forwarded to the new
+    // participants and replayed. We want to send them in chunks so we can
+    // continue to run our two-phase commits while the new arrivals are syncing.
+
+    //
+    snapshotted (identifier) {
+        const sync = () => {
+            // Get a chunk of messages.
+            const splice = this._arrival.tail.splice(32)
             const messages = splice.reduce((messages, entry) => {
                 return messages.concat({
                     method: 'write', ...entry
@@ -151,33 +178,88 @@ class Paxos extends events.EventEmitter {
                     method: 'commit', promise: entry.promise
                 })
             }, [])
+            this._writes.unshift([{
+                to: this._arrival.diff,
+                messages: messages,
+                sent: sync
+            }])
             if (splice.length < 32) {
+                // We are done so our next action is a noop.
+                this._writes[0][0].sent = noop
+                // Sometimes I debug dump below, so clear out this noisy
+                // property.
                 this._arrival.tail = null
+                // This is dirty. This is the current write and it is in the
+                // midst of the two-phase commit. We're going have it commit
+                // prematurely, but it won't matter if there is a collapse
+                // before the new government goes out because in the event of a
+                // collapse the new participant will be dropped.
+                //
+                // Although, we're probably going to have to have rejection
+                // anyway when it comes time to do depart where someone will
+                // usurp the government.
+                //
+                // Even if we allow the ordinary mechanism commit the write, it
+                // will unshift the government commit ahead of this commit, so
+                // we probably have to keep this even when there is a rejection.
+                // Essentially, we simply need to ensure that no one will learn
+                // anything from the new participant until it gets a new
+                // government. That is the simple rule that makes this okay.
                 if (this._write != null) {
                     messages.push(this._write)
+                    messages.push({ method: 'commit', promise: this._write.promise })
                 }
                 // We're not going to pushback a commit. We can assert that
                 // there is only one message here.
-                assert(this._writes[0].length == 0 || this._writes[0].messages.length == 1)
+                assert(this._writes[1].length == 0 || this._writes[1].messages.length == 1)
+                // We want to sent the message to our current majority with
+                // ourselves as the leader when we are abdicating, so let's get
+                // a list with everyone but ourselves.
+                const excluded = this._arrival.majority.filter(address => address != this._router.address)
+                // Construct a new government.
+                //
+                // TODO Reassign backlogged promises.
                 const government = this._government(this._arrival.majority, this.government.majority)
-                this._arrival.state = government.majority[0] == this.address ? 'reformed' : 'abdicated'
-                this._arrival.backlog = this._writes[0]
-                this._writes[0] = [{
-                    to: ([ this.address ]).concat(government.majority.filter(address => address != this.address)),
+                // Our new government write.
+                const write = {
+                    to: ([ this._router.address ]).concat(excluded),
                     bucket: this.bucket,
                     messages: [{
                         method: 'write', promise: government.promise, isGovernment: true, government
-                    }]
-                }]
-                this._writes.unshift([{
-                    to: this._arrival.diff,
-                    bucke: this.bucket,
-                    messages: messages
-                }])
-                this._transport.notify('send', this.address, this.bucket)
-                break
+                    }],
+                    sent: noop
+                }
+                // If we're abdicating, our queued messages need to be queued in
+                // the new leader. We send the new messages one at a time. This
+                // particular hop is done through the Paxos channel and not the
+                // Router channel. Note that this is the same HTTP connection,
+                // but a different endpoint. The router channel will pause at
+                // the new leader until the unpause method arrives so that the
+                // streams remain in order.
+                //
+                // If we're not abidicating, then we simply unshift the new
+                // government onto the queue. It runs next.
+                if (this._arrival.abdicated) {
+                    this._writes[1] = ([ write ]).concat(this._writes[1].map(entry => {
+                        return {
+                            to: [ government.majority[0] ],
+                            method: 'enqueue',
+                            body: entry,
+                            sent: noop
+                        }
+                    })).concat([{
+                        to: [ government.majority[0] ],
+                        messages: [{ method: 'unpause', identifier }],
+                        sent: noop
+                    }])
+                } else {
+                    this._writes[1].unshift(write)
+                }
+                // Nudge the send loop.
+                this._transport.notify('send', this._router.address, this.bucket)
             }
         }
+        sync()
     }
 
     _commit (now, entry, top) {
@@ -202,12 +284,16 @@ class Paxos extends events.EventEmitter {
     }
 
     async _send () {
+        // Loop until we shutdown.
         while (!this.destroyed) {
-            if (this._writes[0].length == 0 && this._writes.length != 1) {
+            // We have an array of arrays of writes. We shift the array of
+            // arrays when the first array is empty.
+            while (this._writes[0].length == 0 && this._writes.length != 1) {
                 this._writes.shift()
             }
+            // If we have no writes, we snooze until we're notified.
             if (this._writes[0].length == 0) {
-                await this._transport.wait('send', this.address, this.bucket)
+                await this._transport.wait('send', this._router.address, this.bucket)
                 continue
             }
             const write = this._writes[0].shift()
@@ -216,10 +302,12 @@ class Paxos extends events.EventEmitter {
                 bucket: this.bucket,
                 messages: write.messages
             }
-            const to = envelope.to.slice()
-            const leader = envelope.to.indexOf(this.address)
-            if (~leader) {
-                assert.equal(leader, 0, 'leader is not first in majority')
+            // For messages that go to a quorum, we remove ourselves and send
+            // synchronously. The synchronous send eliminates sundry race
+            // condition considertions. There are no asynchronous state changes
+            // in the leader, only in the peers.
+            const leader = envelope.to[0] == this._router.address
+            if (leader) {
                 envelope.to.shift()
                 this.receive(envelope.messages)
             }
@@ -228,25 +316,31 @@ class Paxos extends events.EventEmitter {
             // you speak with might be ahead of you, so it would return a
             // rejection, and that is not an exceptional condition, really.
             const responses = await this._transport.send(envelope)
-            if (~leader) {
-                const messages = []
-                for (const message of envelope.messages) {
-                    if (message.method == 'write') {
-                        const commit = { method: 'commit', promise: message.promise }
-                        if (this._writes[this._writes.length - 1].length == 0) {
-                            this._writes[this._writes.length - 1].push({
-                                to: to,
-                                bucket: this.bucket,
-                                messages: [ commit ]
-                            })
-                        } else {
-                            this._writes[this._writes.length - 1].messages.unshift(commit)
-                        }
-                    }
+            // This callback is for post snapshot message sync, interleaving log
+            // fast-forwarding with the two-phase commit to we don't feel a
+            // pause.
+            write.sent.call()
+            // If we where the leader, this was a message write, so I suppose,
+            // the only messages sent with the leader out front are two-phase
+            // commit messages. We can come back and tighten up the logic around
+            // this rule later.
+            if (leader) {
+                assert(1 <= envelope.messages.length && envelope.messages.length <= 2)
+                assert(envelope.messages[envelope.messages.length - 1].method == 'write')
+                const commit = {
+                    method: 'commit',
+                    promise: envelope.messages[envelope.messages.length - 1].promise
                 }
-            }
-            if (this._writes.length != 0) {
-                this._transport.notify('send', this.address, this.bucket)
+                this.receive([ commit ])
+                if (this._writes[this._writes.length - 1].length == 0) {
+                    this._writes[this._writes.length - 1].push({
+                        to: envelope.to,
+                        messages: [ commit ],
+                        sent: noop
+                    })
+                } else {
+                    this._writes[this._writes.length - 1][0].messages.unshift(commit)
+                }
             }
         }
     }

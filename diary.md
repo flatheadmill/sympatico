@@ -1,3 +1,17 @@
+## Sat Feb 15 18:40:19 CST 2020
+
+Designing join and rebalance with an assumption that this won't overlap. Need to
+come back and create a list of rules and give them names that can be referenced
+in subsequent rules.
+
+## Thu Feb 13 12:53:22 CST 2020
+
+Enqueue into Paxos needs to be a queue for visibility and it need to block the
+caller. Which means Turnstile or Avenue, but maybe not. Seems like we can keep
+our loop of writes running and have our backlog and that can expose our count.
+Because everyone is going to have to wait, that can't be done without creating a
+queue in Node.js loop, so we may as well leave it there.
+
 ## Wed Feb 12 01:00:47 CST 2020
 
 Ideally, I'd like to have the messages enqueued in the order in which they are

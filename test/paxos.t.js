@@ -1,4 +1,4 @@
-require('proof')(7, prove)
+require('proof')(8, prove)
 
 async function test (okay, routers) {
     // const outboxes = routers.map(router => router.outboxes().map(outbox => outbox.shifter().sync))
@@ -55,9 +55,19 @@ async function test (okay, routers) {
         promise: '2/0',
         body: {
             promise: '2/0',
-            majority: [ 1, 0 ]
+            majority: [ 1, 0 ],
+            abdication: true
         }
     }, 'enqueue 1 1 4')
+    okay(await entries[0][1].shift(), {
+        isGovernment: true,
+        promise: '2/0',
+        body: {
+            promise: '2/0',
+            majority: [ 1, 0 ],
+            abdication: true
+        }
+    }, 'enqueue 0 1 4')
 }
 
 async function prove (okay) {
@@ -74,6 +84,8 @@ async function prove (okay) {
     class Transport {
         constructor () {
             this._sempahores = { send: {}, synchronize: {} }
+            this.pause()
+            this.unpause()
         }
 
         async wait (loop, address, bucket) {
@@ -94,7 +106,16 @@ async function prove (okay) {
             }
         }
 
-        enqueue (address, value) {
+        pause () {
+            this._unpause = new Promise(resolve => this._pause = resolve)
+        }
+
+        unpause () {
+            this._pause.call()
+        }
+
+        async enqueue (address, value) {
+            await this._pause
             return routers[address].enqueue(value)
         }
 
