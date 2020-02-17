@@ -40,7 +40,7 @@ class Paxos extends events.EventEmitter {
         destructible.durable('paxos', this._send.bind(this))
         destructible.destruct(() => {
             this.destroyed = true
-            transport.notify('send', router.address, bucket)
+            transport.notify(router.address, bucket)
         })
     }
 
@@ -157,7 +157,7 @@ class Paxos extends events.EventEmitter {
             messages: [{ method: 'write', promise, isGovernment: false, body }],
             sent: noop
         })
-        this._transport.notify('send', this._router.address, this.bucket)
+        this._transport.notify(this._router.address, this.bucket)
     }
 
 
@@ -256,7 +256,7 @@ class Paxos extends events.EventEmitter {
                     this._writes[1].unshift(write)
                 }
                 // Nudge the send loop.
-                this._transport.notify('send', this._router.address, this.bucket)
+                this._transport.notify(this._router.address, this.bucket)
             }
         }
         sync()
@@ -293,7 +293,7 @@ class Paxos extends events.EventEmitter {
             }
             // If we have no writes, we snooze until we're notified.
             if (this._writes[0].length == 0) {
-                await this._transport.wait('send', this._router.address, this.bucket)
+                await this._transport.wait(this._router.address, this.bucket)
                 continue
             }
             const write = this._writes[0].shift()

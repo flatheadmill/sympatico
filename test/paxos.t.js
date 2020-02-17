@@ -83,25 +83,23 @@ async function prove (okay) {
 
     class Transport {
         constructor () {
-            this._sempahores = { send: {}, synchronize: {} }
+            this._semaphores = {}
             this.pause()
             this.unpause()
         }
 
-        async wait (loop, address, bucket) {
-            const semaphores = this._sempahores[loop]
-            if (semaphores[address] == null) {
-                semaphores[address] = {}
+        async wait (address, bucket) {
+            if (this._semaphores[address] == null) {
+                this._semaphores[address] = {}
             }
-            assert(semaphores[address][bucket] == null)
-            return new Promise(resolve => semaphores[address][bucket] = resolve)
+            assert(this._semaphores[address][bucket] == null)
+            return new Promise(resolve => this._semaphores[address][bucket] = resolve)
         }
 
-        notify (loop, address, bucket) {
-            const semaphores = this._sempahores[loop]
-            if (semaphores[address] != null && semaphores[address][bucket] != null) {
-                const resolve = semaphores[address][bucket]
-                delete semaphores[address][bucket]
+        notify (address, bucket) {
+            if (this._semaphores[address] != null && this._semaphores[address][bucket] != null) {
+                const resolve = this._semaphores[address][bucket]
+                delete this._semaphores[address][bucket]
                 resolve()
             }
         }
