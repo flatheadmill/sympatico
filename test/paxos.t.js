@@ -1,4 +1,4 @@
-require('proof')(8, prove)
+require('proof')(9, prove)
 
 async function test (okay, routers) {
     // const outboxes = routers.map(router => router.outboxes().map(outbox => outbox.shifter().sync))
@@ -49,7 +49,6 @@ async function test (okay, routers) {
         promise: '1/2',
         body: { key: 1, value: 'b' }
     }, 'enqueue 1 1 4')
-    routers[1].arrive('2/0', [ 0, 1 ], [ 1, 1, 1, 1, 0, 0, 0, 0 ])
     okay(await entries[1][1].shift(), {
         isGovernment: true,
         promise: '2/0',
@@ -59,6 +58,7 @@ async function test (okay, routers) {
             abdication: true
         }
     }, 'enqueue 1 1 4')
+    routers[1].arrive('2/0', [ 0, 1 ], [ 1, 1, 1, 1, 0, 0, 0, 0 ])
     okay(await entries[0][1].shift(), {
         isGovernment: true,
         promise: '2/0',
@@ -68,6 +68,19 @@ async function test (okay, routers) {
             abdication: true
         }
     }, 'enqueue 0 1 4')
+    for (let i = 0; i < 8; i++) {
+        if (i != 1) {
+            const snapshot = await snapshots[0][i].shift()
+            await routers[0].snapshotted(i, snapshot.promise)
+        }
+    }
+    for (let i = 0; i < 8; i++) {
+        if (i != 1) {
+            await entries[0][i].join(entry => entry.promise == '2/0')
+            await entries[1][i].join(entry => entry.promise == '2/0')
+        }
+    }
+    okay('done')
 }
 
 async function prove (okay) {

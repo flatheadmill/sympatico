@@ -14,9 +14,7 @@ const Pause = require('./pause')
 
 const noop = () => {}
 
-function dump (value) {
-    console.log(require('util').inspect(value, { depth: null }))
-}
+const dump = require('./dump')
 
 class Paxos extends events.EventEmitter {
     constructor (destructible, transport, router, bucket) {
@@ -137,6 +135,7 @@ class Paxos extends events.EventEmitter {
                 this._commit(0, write, this._top)
                 break
             case 'unpause':
+                this._router.decrement(message.identifier, 'transfer')
                 this.pause.allow(message.identifier)
                 break
             default:
@@ -225,7 +224,11 @@ class Paxos extends events.EventEmitter {
                     to: ([ this._router.address ]).concat(excluded),
                     bucket: this.bucket,
                     messages: [{
-                        method: 'write', promise: government.promise, isGovernment: true, government
+                        method: 'write',
+                        promise: government.promise,
+                        identifier: this._arrival.identifier,
+                        isGovernment: true,
+                        government
                     }],
                     sent: noop
                 }
@@ -249,7 +252,7 @@ class Paxos extends events.EventEmitter {
                         }
                     })).concat([{
                         to: [ government.majority[0] ],
-                        messages: [{ method: 'unpause', identifier }],
+                        messages: [{ method: 'unpause', identifier: this._arrival.identifier }],
                         sent: noop
                     }])
                 } else {
@@ -273,6 +276,7 @@ class Paxos extends events.EventEmitter {
                 isGovernment: true,
                 body: this.government = entry.government
             })
+            this._router.decrement(entry.identifier, 'transfer')
         } else {
             this._top = entry.promise
             this.log.push({

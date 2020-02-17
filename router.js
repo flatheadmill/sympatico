@@ -1,20 +1,26 @@
 const assert = require('assert')
+const events = require('events')
+const dump = require('./dump')
 
 const coalesce = require('extant')
 const fnv = require('./fnv')
 const Keyify = require('keyify')
 
+const Queue = require('avenue')
+
 const Paxos = require('./paxos')
 
-class Router {
+class Router extends events.EventEmitter {
     constructor (destructible, { extractor, hash, transport, buckets, address }) {
+        super()
         this.address = address
         this.buckets = []
         this.shifters = []
+        this.transitions = new Queue
+        this._countdowns = {}
         this._hash = coalesce(hash, fnv)
         this._extractor = extractor
         this._transport = transport
-        this._pause = []
         for (let i = 0; i < buckets; i++) {
             const paxos = new Paxos(destructible.durable([ 'paxos', i ]), transport, this, i)
             this.shifters.push(paxos.log.shifter().sync)
@@ -47,27 +53,72 @@ class Router {
         this.buckets.forEach((paxos, index) => paxos.join())
     }
 
+    // Note that when we count down we might not wait for a finalization on our
+    // side knowing that the next state of the transition will be held back by
+    // the finalization on the other side. Specifically, we're done with an
+    // abdication when the new government is committed even though we still have
+    // to fowrard the backlog, but we're done with a coronation only when the
+    // backlog is received.
     arrive (identifier, order, table) {
         switch (order.length) {
-        case 1:
-            break
         case 2:
-            this.table.forEach((_, index) => {
-                const pause = this._pause[index] = {}
-                pause.promise = new Promise(resolve => pause.resolve = resolve)
-            })
             const majorities = table
                 .map((value, index) => [ index, [ value, order[(order.indexOf(value) + 1) % 2] ] ])
-                .filter((_, index) => this.table[index] == this.address)
-            for (const majority of majorities) {
-                this.buckets[majority[0]].arrive(identifier, majority[1])
+            // Current leadership transitioning to growth or abdication.
+            const mutations = majorities.filter((next, index) => {
+                const previous = this.buckets[index].government.majority
+                return this.table[index] == this.address &&
+                    (
+                        next.length != previous.length ||
+                        next.map((address, index) => previous[index] == address).length != next.length
+                    )
+
+            })
+            for (const mutation of mutations) {
+                this.buckets[mutation[0]].arrive(identifier, mutation[1])
             }
+            const coronations = majorities.filter((majority, index) => {
+                return majority[1][0] == this.address &&
+                       this.table[index] != this.address
+            })
+            // Increment our transfer countdown once for each new government.
+            this.increment(identifier, 'transfer', coronations.length)
+            const governments = majorities.filter((next, index) => {
+                const previous = this.buckets[index].government.majority
+                return (~next.indexOf(this.address) || ~previous.indexOf(this.address)) ||
+                    (
+                        next.length != previous.length ||
+                        next.map((address, index) => previous[index] == address).length != next.length
+                    )
+            })
+            // Increment our transfer countdown once for each unpause.
+            this.increment(identifier, 'transfer', governments.length)
             break
         default:
         }
+        // Possibly trigger the transfer if we've reached zero by virtue of
+        // being on the receiving end of the actions of other participants.
+        this.increment(identifier, 'transfer')
+        this.decrement(identifier, 'transfer')
     }
 
-    route (machines, table) {
+    _countdown (identifier) {
+        if (!(identifier in this._countdowns)) {
+            this._countdowns[identifier] = { transfer: 0, complete: 0 }
+        }
+    }
+
+    decrement (identifier, stage) {
+        this._countdown(identifier)
+        this._countdowns[identifier][stage]--
+    }
+
+    increment (identifier, stage, amount = 1) {
+        this._countdown(identifier)
+        this._countdowns[identifier][stage] += amount
+        if (this._countdowns[stage] == 0) {
+            this.emit(stage, this._identifier)
+        }
     }
 
     _bucket (value) {
