@@ -77,6 +77,23 @@ class Paxos extends events.EventEmitter {
         this.snapshot.push({ method: 'snapshot', to: diff, bucket: this.bucket, promise })
     }
 
+    transition (identifier, majority) {
+        const government = this._government(majority, this.government.majority)
+        const write = {
+            to: government.majority,
+            messages: [{
+                method: 'write',
+                promise: government.promise,
+                identifier: identifier,
+                isGovernment: true,
+                government
+            }],
+            sent: noop
+        }
+        this._writes[this._writes.length - 1].unshift(write)
+        this._transport.notify(this._router.address, this.bucket)
+    }
+
     // Note that for surge replace we're going to do things at the router level.
     // Our majority will be shaped such that the delegates are not on the left
     // or right of the new leader, but remain in the place of the old leader.

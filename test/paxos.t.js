@@ -1,7 +1,8 @@
-require('proof')(9, prove)
+require('proof')(11, prove)
 
 async function test (okay, routers) {
     // const outboxes = routers.map(router => router.outboxes().map(outbox => outbox.shifter().sync))
+    const transitions = routers.map(router => router.transitions.shifter())
     const entries = routers.map(router => router.entries().map(entries => entries.shifter()))
     const snapshots = routers.map(router => router.snapshots().map(snapshot => snapshot.shifter()))
     routers[0].bootstrap(0, [ 0, 0, 0, 0, 0, 0, 0, 0 ])
@@ -80,7 +81,25 @@ async function test (okay, routers) {
             await entries[1][i].join(entry => entry.promise == '2/0')
         }
     }
-    okay('done')
+    okay([
+        await transitions[0].shift(), await transitions[1].shift()
+    ], [{
+        stage: 'transfer', identifier: '2/0'
+    }, {
+        stage: 'transfer', identifier: '2/0'
+    }], 'transitions')
+    routers[0].transition()
+    const promises = []
+    for (let i = 4; i < 8; i++) {
+        promises.push((await entries[0][i].shift()).promise)
+    }
+    okay(promises, [ '3/0', '3/0', '3/0', '3/0' ], 'transitioned')
+    routers[1].transition()
+    promises.length = 0
+    for (let i = 0; i < 4; i++) {
+        promises.push((await entries[0][i].shift()).promise)
+    }
+    okay(promises, [ '3/0', '3/0', '3/0', '3/0' ], 'transitioned')
 }
 
 async function prove (okay) {

@@ -93,6 +93,8 @@ class Router extends events.EventEmitter {
             })
             // Increment our transfer countdown once for each unpause.
             this.increment(identifier, 'transfer', governments.length)
+            this._identifier = identifier
+            this._arrival = { identifier, majorities }
             break
         default:
         }
@@ -100,6 +102,18 @@ class Router extends events.EventEmitter {
         // being on the receiving end of the actions of other participants.
         this.increment(identifier, 'transfer')
         this.decrement(identifier, 'transfer')
+    }
+
+    transition () {
+        assert(this._arrival)
+        const transitions = this._arrival.majorities.filter(majority => majority[1][0] == this.address)
+        dump({ address: this.address, arrival: this._arrival, transitions })
+        for (const transition of transitions) {
+            this.increment(this._arrival.identifier, 'transfer')
+            this.buckets[transition[0]].transition(this._arrival.identifier, transition[1])
+        }
+        this.increment(this._arrival.identifier, 'transfer')
+        this.decrement(this._arrival.identifier, 'transfer')
     }
 
     _countdown (identifier) {
@@ -111,14 +125,14 @@ class Router extends events.EventEmitter {
     decrement (identifier, stage) {
         this._countdown(identifier)
         this._countdowns[identifier][stage]--
+        if (this._countdowns[identifier][stage] == 0) {
+            this.transitions.push({ stage, identifier })
+        }
     }
 
     increment (identifier, stage, amount = 1) {
         this._countdown(identifier)
         this._countdowns[identifier][stage] += amount
-        if (this._countdowns[stage] == 0) {
-            this.emit(stage, this._identifier)
-        }
     }
 
     _bucket (value) {
