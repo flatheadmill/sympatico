@@ -2,16 +2,7 @@ const assert = require('assert')
 
 const RBTree = require('bintrees').RBTree
 const Monotonic = require('paxos/monotonic')
-const Avenue = require('avenue')
-
-function sortByLoad (left, right) {
-    const compare = left.buckets.length - right.buckets.length
-    if (compare == 0) {
-        return Monotonic.compare(left.promise, right.promise)
-    }
-    return compare
-}
-
+const Queue = require('avenue')
 
 // Appears that we use our map of particpants and the buckets assigned to them
 // as the definitive, latest table and just keep track of whether that has
@@ -28,12 +19,12 @@ function sortByLoad (left, right) {
 
 class Table {
     constructor (bucketCount) {
-        this.queue = new Avenue
+        this.queue = new Queue
         this._bucketCount = bucketCount
         this._participants = {}
         this._order = []
         this._table = []
-        this._tables = []
+        this._arrivals = []
         this._snapshots = []
     }
 
@@ -47,20 +38,18 @@ class Table {
         return this._snapshots[promise]
     }
 
-    _evenOut (load) {
-        const evenedOut = this._bucketCount % Object.keys(this._participants).length == 0 ? 0 : 1
-        for (;;) {
-            const max = load.max()
-            const min = load.min()
-            if (max.buckets.length - min.buckets.length == evenedOut) {
-                break
+    _evenOuter () {
+        const load = new RBTree(function (left, right) {
+            const compare = left.buckets.length - right.buckets.length
+            if (compare == 0) {
+                return Monotonic.compare(left.promise, right.promise)
             }
-            load.remove(max)
-            load.remove(min)
-            min.buckets.push(max.buckets.shift())
-            load.insert(max)
-            load.insert(min)
+            return compare
+        })
+        for (const promise in this._participants) {
+            load.insert(this._participants[promise])
         }
+        return load
     }
 
     _createTable () {
@@ -87,75 +76,120 @@ class Table {
         }
     }
 
-    arrive (promise, properties) {
-        const size = Object.keys(this._participants).length + 1
-        if (size == 1) {
-            this._order.push(promise)
+    _nextTable () {
+        const size = this._order.length
+        this._order.push.apply(this._order, this._arrivals)
+        if (size == 0) {
+            const promise = this._arrivals.shift()
             this._participants[promise] = {
                 promise: promise,
-                buckets: new Array(this._bucketCount).fill(0).map((_, index) => index),
-                properties: properties
+                buckets: new Array(this._bucketCount).fill(0).map((_, index) => index)
             }
+            this._table = this._createTable()
         } else {
-            this._snapshots[promise] = JSON.parse(JSON.stringify({
-                participants: this._participants,
-                order: this._order
-            }))
-            this._order.push(promise)
-            const load = new RBTree(sortByLoad)
-            for (const promise in this._participants) {
-                load.insert(this._participants[promise])
+            for (const promise of this._arrivals) {
+                this._participants[promise] = { promise, buckets: [] }
             }
-            const participant = this._participants[promise] = {
-                promise: promise,
-                buckets: [],
-                properties: properties
-            }
-            let buckets =  Math.floor(this._bucketCount / size)
-            while (buckets-- != 0) {
+            const load = this._evenOuter()
+            const evenedOut = this._bucketCount % this._order.length == 0 ? 0 : 1
+            for (;;) {
                 const max = load.max()
+                const min = load.min()
+                if (max.buckets.length - min.buckets.length == evenedOut) {
+                    break
+                }
                 load.remove(max)
-                const index = max.buckets.shift()
+                load.remove(min)
+                min.buckets.push(max.buckets.shift())
                 load.insert(max)
-                participant.buckets.push(index)
+                load.insert(min)
             }
-            this._evenOut(load)
         }
-        this._table = this._createTable()
-        this.queue.push(JSON.parse(JSON.stringify(this._table)))
+        this._pending = {
+            departed: false,
+            table: this._createTable(),
+            arrivals: this._arrivals.splice(0)
+        }
+        this.queue.push(this._pending.table)
+    }
+
+    _maybeNextTable () {
+        if (this._arrivals.length != 0 && this._pending == null) {
+            this._nextTable()
+        }
+    }
+
+    arrive (promise) {
+        this._snapshots[promise] = JSON.parse(JSON.stringify({
+            participants: this._participants,
+            order: this._order,
+            arrivals: this._arrivals
+        }))
+        this._arrivals.push(promise)
+        this._maybeNextTable()
     }
 
     acclimate (promise) {
         delete this._snapshots[promise]
     }
 
-    depart (promise, address) {
+    depart (promise) {
         delete this._snapshots[promise]
         const participant = this._participants[promise]
         delete this._participants[promise]
         this._order.splice(this._order.indexOf(promise), 1)
         const table = JSON.parse(JSON.stringify(this._table))
-        for (const bucket of table) {
+        if (this._pending != null) {
+            this._arrivals.unshift.apply(this._arrivals, this._pending.arrivals)
+        }
+        this._pending = { departed: true }
+        const load = this._evenOuter()
+        for (let i = 0, I = table.length; i < I; i++) {
+            const bucket = table[i]
             const index = bucket.indexOf(promise)
             if (~index) {
                 bucket.splice(index, 1)
+                if (index == 0) {
+                    if (bucket.length == 0) {
+                        const min = load.min()
+                        load.remove(min)
+                        bucket.push(min.promise)
+                        min.buckets.push(i)
+                        load.insert(min)
+                    } else {
+                        const participant = this._participants[bucket[0]]
+                        load.remove(participant)
+                        participant.buckets.push(i)
+                        load.insert(participant)
+                    }
+                }
             }
-            assert(bucket.length != 0)
         }
-        const load = new RBTree(sortByLoad)
-        for (const promise in this._participants) {
-            load.insert(this._participants[promise])
+        this._departed = true
+        this.queue.push(this._table = table)
+    }
+
+    // If this is a departure table, we've already promoted it, but if not we
+    // can now fail forward on depature using the new table.
+
+    //
+    transition () {
+        if (!this._pending.departed) {
+            this._table = this._pending.table
         }
-        while (participant.buckets.length != 0) {
-            const index = participant.buckets.shift()
-            const min = load.min()
-            min.buckets.push(index)
-            load.remove(min)
-            load.insert(min)
+    }
+
+    // If we've departed, we do go to the next table which will even out the
+    // leadership, otherwise we'll go to the next table if there are arrivals.
+
+    //
+    complete () {
+        if (this._pending.departed) {
+            this._nextTable()
+        } else {
+            this._pending = null
+            this._maybeNextTable()
         }
-        this._evenOut(load)
-        this._tables.push(this._createTable())
-        this.queue.push(table)
     }
 }
 
