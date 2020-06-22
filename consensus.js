@@ -35,7 +35,7 @@ class Paxos extends events.EventEmitter {
         this.destroyed = false
         this._writes = [ [] ]
         this._transport = transport
-        destructible.durable('paxos', this._send.bind(this))
+        destructible.durable('consensus', this._send.bind(this))
         destructible.destruct(() => {
             this.destroyed = true
             transport.notify(router.address, bucket)

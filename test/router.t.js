@@ -161,7 +161,7 @@ async function prove (okay) {
 
     const transport = new Transport
 
-    const destructible = new Destructible('test/paxos.t')
+    const destructible = new Destructible('test/router.t')
 
     const Router = require('../router')
     const routers = []

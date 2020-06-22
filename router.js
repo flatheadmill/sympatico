@@ -8,7 +8,7 @@ const Keyify = require('keyify')
 
 const Queue = require('avenue')
 
-const Paxos = require('./paxos')
+const Consensus = require('./consensus')
 
 class Router extends events.EventEmitter {
     constructor (destructible, { extractor, hash, transport, buckets, address }) {
@@ -22,35 +22,35 @@ class Router extends events.EventEmitter {
         this._extractor = extractor
         this._transport = transport
         for (let i = 0; i < buckets; i++) {
-            const paxos = new Paxos(destructible.durable([ 'paxos', i ]), transport, this, i)
-            this.shifters.push(paxos.log.shifter().sync)
-            this.buckets.push(paxos)
+            const consensus = new Consensus(destructible.durable([ 'consensus', i ]), transport, this, i)
+            this.shifters.push(consensus.log.shifter().sync)
+            this.buckets.push(consensus)
         }
     }
 
     outboxes () {
-        return this.buckets.map(paxos => paxos.outbox.shifter())
+        return this.buckets.map(consensus => consensus.outbox.shifter())
     }
 
     entries () {
-        return this.buckets.map(paxos => paxos.log)
+        return this.buckets.map(consensus => consensus.log)
     }
 
     snapshots () {
-        return this.buckets.map(paxos => paxos.snapshot)
+        return this.buckets.map(consensus => consensus.snapshot)
     }
 
     bootstrap (now, table) {
         assert.equal(table.length, this.buckets.length, 'bucket count wrong')
         this.ordered = [ this.address ]
         this.table = table
-        this.buckets.forEach((paxos, index) => paxos.bootstrap())
+        this.buckets.forEach((consensus, index) => consensus.bootstrap())
     }
 
     join (ordered, table) {
         this.ordered = ordered
         this.table = table
-        this.buckets.forEach((paxos, index) => paxos.join())
+        this.buckets.forEach((consensus, index) => consensus.join())
     }
 
     // Note that when we count down we might not wait for a finalization on our
@@ -151,36 +151,36 @@ class Router extends events.EventEmitter {
 
     // This suggests a queue for the hop, where there is only one connection
     // between each participant for enqueue, or alternatively some way to pause
-    // the hops and using the Paxos channel to send the enqueue.
+    // the hops and using the Consensus channel to send the enqueue.
 
     // We only have to check the pause if we are in the process of transitioning
     // a government though.
     async enqueue (value) {
         const bucket = this._bucket(value)
         const address = this.table[bucket]
-        const paxos = this.buckets[bucket]
-        if (paxos.government.majority[0] == this.address) {
+        const consensus = this.buckets[bucket]
+        if (consensus.government.majority[0] == this.address) {
             if (address != this.address) {
-                await paxos.pause.allowed('0/0')
+                await consensus.pause.allowed('0/0')
             }
-            paxos.enqueue(value)
+            consensus.enqueue(value)
         } else {
             if (address == this.address) {
-                paxos.enqueue(value)
+                consensus.enqueue(value)
             } else {
                 await this._transport.enqueue(address, value)
             }
-            if (paxos.government.majority[0] == this.address) {
-                paxos.enqueue(value)
+            if (consensus.government.majority[0] == this.address) {
+                consensus.enqueue(value)
             } else {
-                await this._transport.enqueue(paxos.government.majority[0], value)
+                await this._transport.enqueue(consensus.government.majority[0], value)
             }
         }
     }
 
     receive (bucket, messages) {
-        const paxos = this.buckets[bucket]
-        return paxos.receive(messages)
+        const consensus = this.buckets[bucket]
+        return consensus.receive(messages)
     }
 }
 
