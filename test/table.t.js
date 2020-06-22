@@ -6,6 +6,9 @@ function prove (okay) {
     tables.push(new Table(16))
     shifters[0] = tables[0].queue.shifter().sync
     tables[0].arrive('1/0')
+    // Structure of table. Table is the length of buckets, so we hash out the id
+    // to find the bucket. The element is the consesus for the bucket with the
+    // leader as the first element in the bucket.
     okay(shifters[0].shift(), [
         [ '1/0' ], [ '1/0' ], [ '1/0' ], [ '1/0' ], [ '1/0' ], [ '1/0' ], [ '1/0' ], [ '1/0' ],
         [ '1/0' ], [ '1/0' ], [ '1/0' ], [ '1/0' ], [ '1/0' ], [ '1/0' ], [ '1/0' ], [ '1/0' ]
