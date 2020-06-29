@@ -3,7 +3,7 @@ require('proof')(2, prove)
 function prove (okay) {
     const Consensus = require('../redux')
     const nodes = (new Array(5).fill(null)).map((_, index) => new Consensus(index))
-    const outboxes = nodes.map(node => node.outbox.shifter().sync)
+    const pulses = nodes.map(node => node.outbox.pulse.shifter().sync)
     const logs = nodes.map(node => node.log.shifter().sync)
 
     function send (from, request, to = null) {
@@ -21,8 +21,8 @@ function prove (okay) {
         while (advanced) {
             advanced = false
             for (let i = 0, I = nodes.length; i < I; i++) {
-                const node = nodes[i], outbox = outboxes[i]
-                for (const request of outbox.iterator()) {
+                const node = nodes[i]
+                for (const request of pulses[i].iterator()) {
                     send(node, request)
                     advanced = true
                 }
@@ -31,7 +31,7 @@ function prove (okay) {
     }
 
     nodes[0].appoint('1/0', [ 0 ])
-    let shift = outboxes[0].shift()
+    let shift = pulses[0].shift()
     okay(shift, {
         to: [ 0 ],
         messages: [{
@@ -49,15 +49,15 @@ function prove (okay) {
     }, 'government')
     send(nodes[0], shift)
     nodes[0].enqueue(1)
-    shift = outboxes[0].shift()
+    shift = pulses[0].shift()
     okay(shift, {
         to: [ 0 ],
         messages: [{ method: 'commit', promise: '1/0', series: '1' }]
     }, 'government commit')
     send(nodes[0], shift)
-    shift = outboxes[0].shift()
+    shift = pulses[0].shift()
     send(nodes[0], shift)
-    shift = outboxes[0].shift()
+    shift = pulses[0].shift()
     send(nodes[0], shift)
     shift = logs[0].shift()
     shift = logs[0].shift()

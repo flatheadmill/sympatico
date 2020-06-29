@@ -15,7 +15,10 @@ class Consensus extends events.EventEmitter {
     constructor (address) {
         super()
         this._address = address
-        this.outbox = new Queue
+        this.outbox = {
+            pulse: new Queue,
+            sync: new Queue
+        }
         this.log = new Queue
         this._trailer = this.log.shifter().sync
         this._write = null
@@ -44,7 +47,7 @@ class Consensus extends events.EventEmitter {
                 series: submission.series
             })
             if (submission.method == 'government') {
-                this.outbox.push({ to: submission.to, messages })
+                this.outbox.pulse.push({ to: submission.to, messages })
                 return
             }
         }
@@ -83,7 +86,7 @@ class Consensus extends events.EventEmitter {
             this._submissions.push({ method, to, promise, series })
         }
         if (messages.length) {
-            this.outbox.push({ to, messages })
+            this.outbox.pulse.push({ to, messages })
         }
     }
 
@@ -201,7 +204,7 @@ class Consensus extends events.EventEmitter {
                 this._commit(0, write, this._top)
                 break
             case 'sync':
-                this.outbox.push({
+                this.outbox.pulse.push({
                     method: 'forward',
                     to: this.government.majority.slice(0, 1),
                     ...this._top.log
