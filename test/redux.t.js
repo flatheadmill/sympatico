@@ -1,4 +1,4 @@
-require('proof')(3, prove)
+require('proof')(4, prove)
 
 function prove (okay) {
     const Consensus = require('../redux')
@@ -45,6 +45,7 @@ function prove (okay) {
                 method: 'government',
                 promise: '1/0',
                 series: '1',
+                stage: 'appoint',
                 body: {
                     promise: '1/0',
                     majority: [ 0 ]
@@ -66,6 +67,8 @@ function prove (okay) {
     send(nodes[0], shift)
     shift = logs[0].shift()
     shift = logs[0].shift()
+    nodes[0].acclimated('1/0')
+    sendAll()
     nodes[0].enqueue(1)
     nodes[0].enqueue(2)
     nodes[0].appoint('2/0', [ 0, 1 ])
@@ -75,14 +78,31 @@ function prove (okay) {
     ], [{
         method: 'government',
         promise: '2/0',
-        series: '4',
+        series: '5',
+        stage: 'appoint',
         body: { promise: '2/0', majority: [ 0, 1 ] }
     }, {
         method: 'entry',
         promise: '2/0',
-        series: '5',
+        series: '6',
         body: 2
     }, null ], 'shift')
     nodes[0].enqueue(3)
     sendAll()
+    nodes[0].acclimated('2/0')
+    sendAll()
+    okay([
+        logs[1].shift(), logs[1].shift(), logs[1].shift()
+    ], [{
+        method: 'entry',
+        promise: '2/0',
+        series: '7',
+        body: 3
+    }, {
+        method: 'government',
+        promise: '2/0',
+        series: '8',
+        stage: 'acclimated',
+        body: { promise: '2/0', majority: [ 0, 1 ] }
+    }, null ], 'shift')
 }

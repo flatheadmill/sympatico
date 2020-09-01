@@ -96,6 +96,7 @@ class Consensus extends events.EventEmitter {
                         method: 'write',
                         body: {
                             method: 'government',
+                            stage: write.stage,
                             promise: write.promise,
                             series: (++this._next).toString(),
                             body: write.government
@@ -151,6 +152,7 @@ class Consensus extends events.EventEmitter {
         // If we are we are bootstrapping, so we cheat and make the bogus first
         // government a majority of us alone so we send the initial government
         // to ourselves.
+        const combined = majority.slice()
         if (majority.length == 1) {
             this.log.push({ method: 'reset' })
             this.top = {
@@ -162,13 +164,45 @@ class Consensus extends events.EventEmitter {
                 majority: majority
             }
         }
+        this._appointment = {
+            state: 'syncing',
+            promise: promise,
+            majority: majority
+        }
+        combined.push.apply(combined, this.government.majority.filter(address => {
+            return !~combined.indexOf(address)
+        }))
         this._writes.unshift({
             to: majority,
             method: 'government',
+            stage: 'appoint',
             promise: promise,
-            government: { promise: promise, majority: majority }
+            government: { promise: promise, majority: combined }
         })
         this._submitIf()
+    }
+
+    // Acclimation is transmitted through the outer Paxos. Unlikely that all
+    // participants will acclimate before a new appointment. We won't do this
+    // during orderly growth of the participant population, only during
+    // abdication, and then it would mean that a participant has become
+    // unreachable, but it still somehow able to enqueue its application message
+    // after the abdication message that removes it.
+
+    acclimated (promise) {
+        assert(this._appointment != null)
+        if (this._appointment.promise == promise) {
+            const { majority } = this._appointment
+            this._appointment = null
+            this._writes.unshift({
+                to: majority,
+                method: 'government',
+                stage: 'acclimated',
+                promise: promise,
+                government: { promise, majority }
+            })
+            this._submitIf()
+        }
     }
 
     // Hold onto this thought, we really want to explicitly reset instances so
@@ -216,8 +250,13 @@ class Consensus extends events.EventEmitter {
         // can abandon an on-boarding.
         const { promise, series } = entry.body
         if (entry.body.method == 'government') {
-            const { body: government } = entry.body
-            assert(Monotonic.compare(government.promise, this.government.promise) > 0)
+            const { stage, body: government } = entry.body
+            const compare = Monotonic.compare(government.promise, this.government.promise)
+            if (stage == 'appoint') {
+                assert(compare > 0)
+            } else {
+                assert.equal(compare, 0)
+            }
             this._top.promise = government.promise
             this.government = government
         }
