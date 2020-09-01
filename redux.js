@@ -48,6 +48,8 @@ class Consensus extends events.EventEmitter {
         this._submissions = []
         // Queue of writes to submit.
         this._writes = []
+        // Whether we've just arrived and require acclimation.
+        this._arriving = false
     }
 
     _submit () {
@@ -259,6 +261,22 @@ class Consensus extends events.EventEmitter {
             }
             this._top.promise = government.promise
             this.government = government
+            // TODO Different somehow with abdicate?
+            if (
+                this.government.majority.length != 1 &&
+                this.government.majority[0] == this._address &&
+                this._address && stage == 'appoint'
+            ) {
+                this.log.push({ method: 'snapshot', promise: this.government.promise })
+            }
+            if (this._arriving) {
+                this._arriving = null
+                this.log.push({
+                    method: 'acclimate',
+                    bootstrap: this.government.majority.length == 1,
+                    leader: this.government.majority[0]
+                })
+            }
         }
         this.log.push(entry.body)
         this._top.series = series
@@ -279,6 +297,7 @@ class Consensus extends events.EventEmitter {
                 if (~message.arrivals.indexOf(this._address)) {
                     this.government = message.government
                     this._top = message.top
+                    this._arriving = true
                 }
                 break
             }

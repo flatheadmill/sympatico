@@ -74,8 +74,12 @@ function prove (okay) {
     nodes[0].appoint('2/0', [ 0, 1 ])
     sendAll()
     okay([
-        logs[1].shift(), logs[1].shift(), logs[1].shift()
+        logs[1].shift(), logs[1].shift(), logs[1].shift(), logs[1].shift()
     ], [{
+        method: 'acclimate',
+        bootstrap: false,
+        leader: 0
+    }, {
         method: 'government',
         promise: '2/0',
         series: '5',
