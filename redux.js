@@ -25,21 +25,28 @@ class Consensus extends events.EventEmitter {
         // Address of a nother particpant on the network and among the buckets.
         // This implementation is bucket un-aware.
         this._address = address
-        // TODO Need only a single outbox...
+        // Outbox for message.
         this.outbox = new Queue
+        // Atomic log.
         this.log = new Queue
+        // Current first stage of write.
         this._write = null
+        // Initial bogus government.
         this.government = {
             promise: '0/0',
             majority: []
         }
-        this._backlog = null
+        // External Paxos promise and internal series number of most recent
+        // message received.
         this._top = {
             promise: '0/0',
             series: '0'
         }
+        // Next message in series.
         this._next = 0n
+        // Current submission.
         this._submissions = []
+        // Queue of writes to submit.
         this._writes = []
     }
 
@@ -58,7 +65,7 @@ class Consensus extends events.EventEmitter {
                 promise: submission.promise,
                 series: submission.series
             })
-            if (submission.method != 'write') {
+            if (submission.method == 'government') {
                 this.outbox.push({ to: submission.to, messages })
                 return
             }
@@ -111,7 +118,10 @@ class Consensus extends events.EventEmitter {
             }
             const { method, promise, series } = messages[messages.length - 1].body
             this._submissions.push({ method, to, promise, series })
+        } else {
+            to.push.apply(to, this.government.majority)
         }
+
         if (messages.length) {
             this.outbox.push({ to, messages })
         }

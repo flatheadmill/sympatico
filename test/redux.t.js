@@ -83,4 +83,6 @@ function prove (okay) {
         series: '5',
         body: 2
     }, null ], 'shift')
+    nodes[0].enqueue(3)
+    sendAll()
 }
