@@ -1,9 +1,9 @@
-require('proof')(2, prove)
+require('proof')(3, prove)
 
 function prove (okay) {
     const Consensus = require('../redux')
     const nodes = (new Array(5).fill(null)).map((_, index) => new Consensus(index))
-    const pulses = nodes.map(node => node.outbox.pulse.shifter().sync)
+    const pulses = nodes.map(node => node.outbox.shifter().sync)
     const logs = nodes.map(node => node.log.shifter().sync)
 
     function send (from, request, to = null) {
@@ -35,6 +35,11 @@ function prove (okay) {
     okay(shift, {
         to: [ 0 ],
         messages: [{
+            method: 'reboot',
+            government: { promise: '0/0', majority: [ 0 ] },
+            top: { promise: '0/0', series: '0' },
+            arrivals: []
+        }, {
             method: 'write',
             body: {
                 method: 'government',
@@ -61,8 +66,21 @@ function prove (okay) {
     send(nodes[0], shift)
     shift = logs[0].shift()
     shift = logs[0].shift()
-    console.log(shift)
     nodes[0].enqueue(1)
     nodes[0].enqueue(2)
     nodes[0].appoint('2/0', [ 0, 1 ])
+    sendAll()
+    okay([
+        logs[1].shift(), logs[1].shift(), logs[1].shift()
+    ], [{
+        method: 'government',
+        promise: '2/0',
+        series: '4',
+        body: { promise: '2/0', majority: [ 0, 1 ] }
+    }, {
+        method: 'entry',
+        promise: '2/0',
+        series: '5',
+        body: 2
+    }, null ], 'shift')
 }

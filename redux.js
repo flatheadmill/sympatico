@@ -8,28 +8,35 @@ const Queue = require('avenue')
 // Ever increasing namespaced identifiers.
 const Monotonic = require('paxos/monotonic')
 
+// A per-bucket participant. No bucket property is kept in the participant, that
+// would be a property of the address. No bucketing here at all, this is just a
+// two-phase commit machine.
+
+// TODO No idea yet how we clear the queue. Probably submit a clear message and
+// it goes through like a normal message but the entry is called `'clear'`
+// instead of `'government'` or `'write'`.
+
 class Consensus extends events.EventEmitter {
-    // The `address` is the Paxos promise that that identifies the participant.
+    // The `address` locates another participant on the network.
 
     //
     constructor (address) {
         super()
+        // Address of a nother particpant on the network and among the buckets.
+        // This implementation is bucket un-aware.
         this._address = address
-        this.outbox = {
-            pulse: new Queue,
-            sync: new Queue
-        }
+        // TODO Need only a single outbox...
+        this.outbox = new Queue
         this.log = new Queue
-        this._trailer = this.log.shifter().sync
         this._write = null
         this.government = {
             promise: '0/0',
             majority: []
         }
-        this._syncing = []
+        this._backlog = null
         this._top = {
             promise: '0/0',
-            series: 0n
+            series: '0'
         }
         this._next = 0n
         this._submissions = []
@@ -38,7 +45,12 @@ class Consensus extends events.EventEmitter {
 
     _submit () {
         const messages = [], to = []
-        // When submitting governments
+
+        // If we have a write outstanding, we will add a commit message and have
+        // it ride the pulse for our new write unless, of course, the
+        // outstanding write is a government, in which case we want it to be
+        // resolved before we start sending new messages.
+
         if (this._submissions.length != 0) {
             const submission = this._submissions[0]
             messages.push({
@@ -46,47 +58,62 @@ class Consensus extends events.EventEmitter {
                 promise: submission.promise,
                 series: submission.series
             })
-            if (submission.method == 'government') {
-                this.outbox.pulse.push({ to: submission.to, messages })
+            if (submission.method != 'write') {
+                this.outbox.push({ to: submission.to, messages })
                 return
             }
         }
-        to.push.apply(to, this.government.majority.filter(address => {
-            return ! this._syncing.includes(address)
-        }))
+
+        // Same here, if we have a commit going out we don't want to send a
+        // government along as a subsequent write. A new government will have a
+        // different set of addressees.
+
         if (
             this._writes.length != 0 &&
             (
-                this._writes[0].method != 'government' || messages.length == 0
+                this._writes[0].method == 'write' || messages.length == 0
             )
         ) {
             const write = this._writes.shift()
-            if (write.method == 'government') {
-                messages.push({
-                    method: 'write',
-                    body: {
-                        method: 'government',
-                        promise: write.promise,
-                        series: (++this._next).toString(),
-                        body: write.government
-                    }
-                })
-            } else {
-                messages.push({
-                    method: 'write',
-                    body: {
-                        method: 'entry',
-                        promise: this.government.promise,
-                        series: (++this._next).toString(),
-                        body: write.body
-                    }
-                })
+            to.push.apply(to, write.to || this.government.majority)
+            switch (write.method) {
+            case 'government': {
+                    messages.push({
+                        method: 'reboot',
+                        government: JSON.parse(JSON.stringify(this.government)),
+                        top: JSON.parse(JSON.stringify(this._top)),
+                        arrivals: write.to.filter(to => {
+                            return ! ~this.government.majority.indexOf(to)
+                        })
+                    }, {
+                        method: 'write',
+                        body: {
+                            method: 'government',
+                            promise: write.promise,
+                            series: (++this._next).toString(),
+                            body: write.government
+                        }
+                    })
+                }
+                break
+            case 'write': {
+                    messages.push({
+                        method: 'write',
+                        body: {
+                            method: 'entry',
+                            promise: this.government.promise,
+                            series: (++this._next).toString(),
+                            body: write.body
+                        }
+                    })
+                }
+                break
             }
             const { method, promise, series } = messages[messages.length - 1].body
             this._submissions.push({ method, to, promise, series })
         }
         if (messages.length) {
-            this.outbox.pulse.push({ to, messages })
+            this.outbox.push({ to, messages })
         }
     }
 
@@ -111,16 +138,23 @@ class Consensus extends events.EventEmitter {
         if (this._writes.length != 0 && this._writes[0].method == 'government') {
             this._writes.shift()
         }
+        // If we are we are bootstrapping, so we cheat and make the bogus first
+        // government a majority of us alone so we send the initial government
+        // to ourselves.
         if (majority.length == 1) {
+            this.log.push({ method: 'reboot' })
+            this.top = {
+                promise: '0/0',
+                series: '0'
+            }
             this.government = {
                 promise: '0/0',
                 majority: majority
             }
         }
-        const to = majority.length == 1 ? majority : this.government.majority
         this._writes.unshift({
+            to: majority,
             method: 'government',
-            to: to,
             promise: promise,
             government: { promise: promise, majority: majority }
         })
@@ -160,6 +194,10 @@ class Consensus extends events.EventEmitter {
     // Okay, but let's keep the rejection queue. We'll know exactly where it
     // breaks.
 
+    // TODO Now we need a way to give up on syncing in progress, so we should
+    // add a promise to the syncing method. May as well add a series as well, so
+    // we can simplify our `_submit` method, single switch statement.
+
     //
     _commit (now, entry, top) {
         // If our government has booted, we initialize assuming a series of '0'.
@@ -170,26 +208,11 @@ class Consensus extends events.EventEmitter {
         if (entry.body.method == 'government') {
             const { body: government } = entry.body
             assert(Monotonic.compare(government.promise, this.government.promise) > 0)
-            if (government.majority.length == 1) {
-                this._top = {
-                    promise: entry.promise,
-                    series: 0n
-                }
-            } else {
-                this._top.promise = government.promise
-            }
-            if (government.majority[0] == this._address) {
-                this._syncing = government.majority.slice(1).filter(address => {
-                    return ! this.government.majority.includes(address)
-                })
-                this._backlog = this._trailer.shifter().sync
-            }
-            console.log('>>>>', government)
+            this._top.promise = government.promise
             this.government = government
         }
-        this.log.push(entry)
-        assert.equal(BigInt(series), this._top.series + 1n)
-        this._top.series = BigInt(series)
+        this.log.push(entry.body)
+        this._top.series = series
     }
 
     request (request) {
@@ -203,22 +226,32 @@ class Consensus extends events.EventEmitter {
                 this._write = null
                 this._commit(0, write, this._top)
                 break
-            case 'sync':
-                this.outbox.pulse.push({
-                    method: 'forward',
-                    to: this.government.majority.slice(0, 1),
-                    ...this._top.log
-                })
-                break
-            case 'accept':
-                break
-            case 'forward':
+            case 'reboot':
+                if (~message.arrivals.indexOf(this._address)) {
+                    this.government = message.government
+                    this._top = message.top
+                }
                 break
             }
         }
         return true
     }
 
+    //
+
+    // Handles responses from both channels. `commit`, `write` and `synced` are
+    // pulse channel messages, `reboot` and `sync` are sync channel messages. A
+    // pulse may have a write or commit or both, or a synced.
+    //
+    // After a write we know we need to submit so we call it then, `_submit`
+    // will send the next write if any. Otherwise we call `_submitIf` after the
+    // message loop so that the next message is sent after a lone `commit` or
+    // `synced` if any. If we are responding to a `sync` message the `_submitIf`
+    // is benign and effectively a no-op because either syncing is in progress
+    // or there is nothing to sync, syncing begins begun after a message
+    // enqueues or a pulse completes, not arbitrarily.
+
+    //
     response (request, responses) {
         const successful = request.to.filter(to => ! responses[to]).length == 0
         if (!successful) {
@@ -226,14 +259,6 @@ class Consensus extends events.EventEmitter {
         }
         for (const message of request.messages) {
             switch (message.method) {
-            case 'write': {
-                    assert.notEqual(this._submissions.length, 0)
-                    const submission = this._submissions[0]
-                    const { method, promise, series } = message.body
-                    assert.deepEqual({ method, to: request.to, promise, series }, submission)
-                    this._submit()
-                }
-                break
             case 'commit': {
                     assert.notEqual(this._submissions.length, 0)
                     const committed = this._submissions.shift()
@@ -242,11 +267,19 @@ class Consensus extends events.EventEmitter {
                         promise: committed.promise,
                         series: committed.series
                     })
+                }
+                break
+            case 'write': {
+                    assert.notEqual(this._submissions.length, 0)
+                    const submission = this._submissions[0]
+                    const { method, promise, series } = message.body
+                    assert.deepEqual({ method, to: request.to, promise, series }, submission)
                     this._submit()
                 }
                 break
             }
         }
+        this._submitIf()
     }
 
     enqueue (message) {

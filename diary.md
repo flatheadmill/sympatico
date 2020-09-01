@@ -1,3 +1,18 @@
+## Tue Sep  1 01:44:57 CDT 2020
+
+Returning to this project trying to determine why I'm syncing a backlog. What is
+the backlog for? What is the diffrence between a backlog and a snapshot? Isn't
+it the case that we want to have an attached application? That application can
+consume the messages and it should have its own out of band synchronization?
+
+In designing this I'm imagining a message queue, where each submission is
+actually a message in a stream, and that's fine, we can do that. Just have the
+application manage the stream and forward the backlog. Paxos doesn't forward a
+backlog. Someone joins at a specific government and there is no backlog.
+
+Now I'm wondering if there is a way to adapt Compassion so you can write an
+application that uses either Cowoker or Paxos directly.
+
 ## Sat Feb 15 18:40:19 CST 2020
 
 Designing join and rebalance with an assumption that this won't overlap. Need to
@@ -106,6 +121,12 @@ can be sent with the subsequent write, so it is two phase, but the write doesn't
 need to wait for the commit to complete before the write can be learned by
 clients. The leader can mark the write as committed instantly, in memory, when
 the write returns from the two followers.
+
+NOTE: Yes, this is okay, because there will be complete failures, where we've
+said something is committed, but it is lost. If we lose all three instances at
+any point, we lost, if we lose three disk drives at once we've lost. If you
+really want to ensure that you've committed to a Reed-Solomon protected store,
+maybe use this system to send two messages.
 
 The half Paxos will run for all the buckets of the leader. The leader's two
 followers will be followers for the same set of buckets as the leader. That is,
