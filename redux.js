@@ -86,7 +86,7 @@ class Consensus extends events.EventEmitter {
             switch (write.method) {
             case 'government': {
                     messages.push({
-                        method: 'reboot',
+                        method: 'reset',
                         government: JSON.parse(JSON.stringify(this.government)),
                         top: JSON.parse(JSON.stringify(this._top)),
                         arrivals: write.to.filter(to => {
@@ -152,7 +152,7 @@ class Consensus extends events.EventEmitter {
         // government a majority of us alone so we send the initial government
         // to ourselves.
         if (majority.length == 1) {
-            this.log.push({ method: 'reboot' })
+            this.log.push({ method: 'reset' })
             this.top = {
                 promise: '0/0',
                 series: '0'
@@ -171,7 +171,7 @@ class Consensus extends events.EventEmitter {
         this._submitIf()
     }
 
-    // Hold onto this thought, we really want to explicitly reboot instances so
+    // Hold onto this thought, we really want to explicitly reset instances so
     // that the hiatus doesn't confuse them, they are leaving so they can reset
     // themselves when they return, and this can be done by setting boot to '0'.
 
@@ -236,7 +236,7 @@ class Consensus extends events.EventEmitter {
                 this._write = null
                 this._commit(0, write, this._top)
                 break
-            case 'reboot':
+            case 'reset':
                 if (~message.arrivals.indexOf(this._address)) {
                     this.government = message.government
                     this._top = message.top
@@ -250,7 +250,7 @@ class Consensus extends events.EventEmitter {
     //
 
     // Handles responses from both channels. `commit`, `write` and `synced` are
-    // pulse channel messages, `reboot` and `sync` are sync channel messages. A
+    // pulse channel messages, `reset` and `sync` are sync channel messages. A
     // pulse may have a write or commit or both, or a synced.
     //
     // After a write we know we need to submit so we call it then, `_submit`

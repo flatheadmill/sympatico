@@ -35,7 +35,7 @@ function prove (okay) {
     okay(shift, {
         to: [ 0 ],
         messages: [{
-            method: 'reboot',
+            method: 'reset',
             government: { promise: '0/0', majority: [ 0 ] },
             top: { promise: '0/0', series: '0' },
             arrivals: []
