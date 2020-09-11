@@ -36,6 +36,8 @@ class Consensus extends events.EventEmitter {
             promise: '0/0',
             majority: []
         }
+        // Last message added to the atomic log.
+        this._previous = null
         // External Paxos promise and internal series number of most recent
         // message received.
         this._top = {
@@ -50,6 +52,8 @@ class Consensus extends events.EventEmitter {
         this._writes = []
         // Whether we've just arrived and require acclimation.
         this._arriving = false
+        // Pause when we fail to send, caller will resume us.
+        this.paused = false
     }
 
     _submit () {
@@ -68,7 +72,7 @@ class Consensus extends events.EventEmitter {
                 series: submission.series
             })
             if (submission.method == 'government') {
-                this.outbox.push({ to: submission.to, messages })
+                this.outbox.push({ method: 'send', to: submission.to, messages })
                 return
             }
         }
@@ -91,6 +95,7 @@ class Consensus extends events.EventEmitter {
                         method: 'reset',
                         government: JSON.parse(JSON.stringify(this.government)),
                         top: JSON.parse(JSON.stringify(this._top)),
+                        previous: this._previous,
                         arrivals: write.to.filter(to => {
                             return ! ~this.government.majority.indexOf(to)
                         })
@@ -100,6 +105,7 @@ class Consensus extends events.EventEmitter {
                             method: 'government',
                             stage: write.stage,
                             promise: write.promise,
+                            previous: this._previous,
                             series: (++this._next).toString(),
                             body: write.government
                         }
@@ -126,12 +132,12 @@ class Consensus extends events.EventEmitter {
         }
 
         if (messages.length) {
-            this.outbox.push({ to, messages })
+            this.outbox.push({ method: 'send', to, messages })
         }
     }
 
     _submitIf () {
-        if (this._submissions.length == 0) {
+        if (! this.paused && this._submissions.length == 0) {
             this._submit()
         }
     }
@@ -139,9 +145,6 @@ class Consensus extends events.EventEmitter {
     appoint (promise, majority) {
         // If we are bootstrapping, we simply get things rolling by sending the
         // government to ourselves.
-
-        // TODO Do it two-phase even at bootstrap. Hops will queue up requests
-        // in the pending promise.
 
         // TODO Race where we have an abdication that fails because of the loss
         // of a participant and then the fixed government comes in and gets
@@ -156,8 +159,9 @@ class Consensus extends events.EventEmitter {
         // to ourselves.
         const combined = majority.slice()
         if (majority.length == 1) {
+            this._previous = null
             this.log.push({ method: 'reset' })
-            this.top = {
+            this._top = {
                 promise: '0/0',
                 series: '0'
             }
@@ -167,13 +171,14 @@ class Consensus extends events.EventEmitter {
             }
         }
         this._appointment = {
-            state: 'syncing',
             promise: promise,
             majority: majority
         }
-        combined.push.apply(combined, this.government.majority.filter(address => {
-            return !~combined.indexOf(address)
-        }))
+        if (this.government.majority.length < majority.length) {
+            combined.push.apply(combined, this.government.majority.filter(address => {
+                return !~combined.indexOf(address)
+            }))
+        }
         this._writes.unshift({
             to: majority,
             method: 'government',
@@ -253,6 +258,7 @@ class Consensus extends events.EventEmitter {
         const { promise, series } = entry.body
         if (entry.body.method == 'government') {
             const { stage, body: government } = entry.body
+            entry.body.previous = null
             const compare = Monotonic.compare(government.promise, this.government.promise)
             if (stage == 'appoint') {
                 assert(compare > 0)
@@ -270,7 +276,7 @@ class Consensus extends events.EventEmitter {
                 this.log.push({ method: 'snapshot', promise: this.government.promise })
             }
             if (this._arriving) {
-                this._arriving = null
+                this._arriving = false
                 this.log.push({
                     method: 'acclimate',
                     bootstrap: this.government.majority.length == 1,
@@ -278,15 +284,46 @@ class Consensus extends events.EventEmitter {
                 })
             }
         }
+        this._previous = entry
         this.log.push(entry.body)
-        this._top.series = series
+        this._next = this._top.series = series
     }
 
     request (request) {
+        const responses = []
         for (const message of request.messages) {
+            // When writing, we check for synchronization during an abdication.
+            // A subordinate participant is attempting to take control of the
+            // consensus. We need to make sure that the subordinate
+            // participant is not behind by one in the atomic log.
             switch (message.method) {
-            case 'write':
-                this._write = message
+            case 'write': {
+                    if (message.body.method == 'government') {
+                        if (message.body.previous == null) {
+                            assert.equal(this._previous, null)
+                        } else {
+                            const { previous, series } = message.body
+                            assert.equal(BigInt(previous.body.series) + 1n, BigInt(series))
+                            assert.notEqual(this._previous, null)
+                            // Switching on BigInt literals hurts Istanbul.
+                            switch (
+                                String(BigInt(this._previous.body.series) - BigInt(previous.body.series))
+                            ) {
+                            case '1':
+                                responses.push({ method: 'ahead', previous: this._previous })
+                                break
+                            case '-1':
+                                this._commit(0, previous, this._top)
+                                break
+                            case '0':
+                                break
+                            default:
+                                throw new Error('off')
+                            }
+                        }
+                    }
+                    this._write = message
+                }
                 break
             case 'commit':
                 const write = this._write
@@ -297,12 +334,14 @@ class Consensus extends events.EventEmitter {
                 if (~message.arrivals.indexOf(this._address)) {
                     this.government = message.government
                     this._top = message.top
+                    this._previous = message.previous
                     this._arriving = true
+                    this._submissions.length = 0
                 }
                 break
             }
         }
-        return true
+        return responses
     }
 
     //
@@ -323,7 +362,35 @@ class Consensus extends events.EventEmitter {
     response (request, responses) {
         const successful = request.to.filter(to => ! responses[to]).length == 0
         if (!successful) {
-            return
+            // TODO Retry message.
+            return false
+        }
+        for (const to in responses) {
+            for (const message of responses[to]) {
+                assert.equal(message.method, 'ahead')
+                const { previous } = message
+                const series = {
+                    here: BigInt(this._previous.body.series),
+                    there: BigInt(previous.body.series)
+                }
+                assert.equal(series.here + 1n, series.there)
+                this._commit(0, previous, this._top)
+                const submission = this._submissions.shift()
+                assert.equal(request.messages[0].method, 'reset')
+                this.paused = true
+                this._writes.unshift({
+                    to: submission.to,
+                    method: 'government',
+                    stage: 'appoint',
+                    promise: submission.promise,
+                    government: request.messages[1].body.body
+                })
+                // TODO Add timestamp.
+                this.outbox.push({
+                    method: 'rejected'
+                })
+                return false
+            }
         }
         for (const message of request.messages) {
             switch (message.method) {
@@ -347,6 +414,12 @@ class Consensus extends events.EventEmitter {
                 break
             }
         }
+        this._submitIf()
+        return true
+    }
+
+    resume () {
+        this.paused = false
         this._submitIf()
     }
 
