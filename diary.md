@@ -21,7 +21,7 @@ in subsequent rules.
 
 ## Thu Feb 13 12:53:22 CST 2020
 
-Enqueue into Paxos needs to be a queue for visibility and it need to block the
+Enqueue into Paxos needs to be a queue for visibility and it needs to block the
 caller. Which means Turnstile or Avenue, but maybe not. Seems like we can keep
 our loop of writes running and have our backlog and that can expose our count.
 Because everyone is going to have to wait, that can't be done without creating a
@@ -80,8 +80,8 @@ the new queue.
 Essentially, we get a new arrival and we migrate to it. Everyone gets the
 arrival and generates a new routing table. They take snapshots of any of the
 buckets that will transfer to the new participant. The new participant see its
-arrival and obtains a copy of the existing table, generates the same new routing
-table.
+own arrival and obtain a copy of the existing table, generates the same new
+routing table.
 
 A routing table is used to determine the location of the leader and the location
 of its followers in a half-Paxos that has a government assigned by edict. The
