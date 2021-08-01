@@ -61,6 +61,7 @@ function prove (okay) {
             arrivals: []
         }, {
             method: 'write',
+            to: [ 0 ],
             body: {
                 method: 'government',
                 promise: '1/0',
