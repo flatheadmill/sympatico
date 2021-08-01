@@ -52,8 +52,6 @@ class Consensus extends events.EventEmitter {
         }
         // Next message in series.
         this._next = 0n
-        // Current submission.
-        this._submissions = []
         // Queue of writes to submit.
         this._writes = []
         // Whether we've just arrived and require acclimation.
@@ -72,8 +70,8 @@ class Consensus extends events.EventEmitter {
         // outstanding write is a government, in which case we want it to be
         // resolved before we start sending new messages.
 
-        if (this._submissions.length != 0) {
-            const submission = this._submissions[0]
+        if (this._submitted != null) {
+            const submission = this._submitted
             messages.push({
                 method: 'commit',
                 promise: submission.promise,
@@ -134,7 +132,7 @@ class Consensus extends events.EventEmitter {
                 break
             }
             const { method, promise, series } = messages[messages.length - 1].body
-            this._submissions.push({ method, to, promise, series })
+            this._submitted = { method, to, promise, series }
         } else {
             to.push.apply(to, this.government.majority)
         }
@@ -145,7 +143,7 @@ class Consensus extends events.EventEmitter {
     }
 
     _submitIf () {
-        if (! this.paused && this._submissions.length == 0) {
+        if (! this.paused && this._submitted == null) {
             this._submit()
         }
     }
@@ -345,7 +343,7 @@ class Consensus extends events.EventEmitter {
                     this._top = message.top
                     this._previous = message.previous
                     this._arriving = true
-                    this._submissions.length = 0
+                    this._submitted = null
                 }
                 break
             }
@@ -386,7 +384,8 @@ class Consensus extends events.EventEmitter {
                 }
                 assert.equal(series.here + 1n, series.there)
                 this._commit(0, previous, this._top)
-                const submission = this._submissions.shift()
+                const submission = this._submitted
+                this._submitted = null
                 console.log(request.messages[0])
                 assert.equal(request.messages[0].method, 'reset')
                 this.paused = true
@@ -405,8 +404,9 @@ class Consensus extends events.EventEmitter {
         for (const message of request.messages) {
             switch (message.method) {
             case 'commit': {
-                    assert.notEqual(this._submissions.length, 0)
-                    const committed = this._submissions.shift()
+                    assert.notEqual(this._submitted, null)
+                    const committed = this._submitted
+                    this._submitted = null
                     assert.deepEqual(message, {
                         method: 'commit',
                         promise: committed.promise,
@@ -415,8 +415,8 @@ class Consensus extends events.EventEmitter {
                 }
                 break
             case 'write': {
-                    assert.notEqual(this._submissions.length, 0)
-                    const submission = this._submissions[0]
+                    assert.notEqual(this._submitted, null)
+                    const submission = this._submitted
                     const { method, promise, series } = message.body
                     assert.deepEqual({ method, to: request.to, promise, series }, submission)
                     this._submit()
