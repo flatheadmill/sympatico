@@ -68,6 +68,7 @@ function prove (okay) {
                 committed: null,
                 series: '1',
                 stage: 'appoint',
+                map: {},
                 body: {
                     promise: '1/0',
                     majority: [ 0 ]
@@ -109,6 +110,7 @@ function prove (okay) {
         committed: null,
         series: '5',
         stage: 'appoint',
+        map: { '1/2': '2/1' },
         body: { promise: '2/0', majority: [ 0, 1 ] }
     }, {
         method: 'entry',
@@ -133,6 +135,7 @@ function prove (okay) {
         committed: null,
         series: '8',
         stage: 'acclimated',
+        map: {},
         body: { promise: '2/0', majority: [ 0, 1 ] }
     }, null ], 'shift')
     nodes[0].appoint('3/0', [ 0, 1, 2 ])
@@ -145,6 +148,7 @@ function prove (okay) {
         promise: '3/0',
         series: '9',
         committed: null,
+        map: {},
         body: { promise: '3/0', majority: [ 0, 1, 2 ] }
     }, null ], 'shift')
     nodes[0].acclimated('3/0')
@@ -163,6 +167,7 @@ function prove (okay) {
             promise: '3/0',
             committed: null,
             series: '10',
+            map: {},
             body: { promise: '3/0', majority: [ 0, 1, 2 ] }
         }, null ]
     }, 'abdicate out of sync')
@@ -215,6 +220,7 @@ function prove (okay) {
             promise: '6/0',
             committed: null,
             series: '17',
+            map: {},
             body: { promise: '6/0', majority: [ 0, 2 ] }
         }, null ]
     }, 'abdicator ahead')

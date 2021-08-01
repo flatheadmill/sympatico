@@ -61,6 +61,7 @@ class Consensus extends events.EventEmitter {
         // Last message added to the atomic log.
         this._committed = null
         this._series = 0
+        this._promise = '0/0'
     }
 
     _submit () {
@@ -106,6 +107,13 @@ class Consensus extends events.EventEmitter {
             to.push.apply(to, write.to || this.government.majority)
             switch (write.method) {
             case 'government': {
+                    this._promise  = write.government.promise
+                    const map = {}
+                    for (const write of this._writes) {
+                        const promise = this._promise = Monotonic.increment(this._promise, 1)
+                        map[write.promise] = promise
+                        write.promise = promise
+                    }
                     messages.push({
                         method: 'reset',
                         government: JSON.parse(JSON.stringify(this.government)),
@@ -123,6 +131,7 @@ class Consensus extends events.EventEmitter {
                             promise: write.promise,
                             committed: this._committed,
                             series: (++this._next).toString(),
+                            map: map,
                             body: write.government
                         }
                     })
@@ -453,12 +462,10 @@ class Consensus extends events.EventEmitter {
     }
 
     enqueue (message) {
-        this._writes.push({
-            method: 'write',
-            promise: '0/0',
-            body: message
-        })
+        const promise = this._promise = Monotonic.increment(this._promise, 1)
+        this._writes.push({ method: 'write', promise: promise, body: message })
         this._submitIf()
+        return promise
     }
 }
 
