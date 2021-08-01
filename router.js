@@ -2,7 +2,7 @@ const assert = require('assert')
 const events = require('events')
 const dump = require('./dump')
 
-const coalesce = require('extant')
+const { coalesce } = require('extant')
 const fnv = require('./fnv')
 const Keyify = require('keyify')
 
