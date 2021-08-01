@@ -57,7 +57,7 @@ function prove (okay) {
             method: 'reset',
             government: { promise: '0/0', majority: [ 0 ] },
             top: { promise: '0/0', series: '0' },
-            previous: null,
+            committed: null,
             arrivals: []
         }, {
             method: 'write',
@@ -65,7 +65,7 @@ function prove (okay) {
             body: {
                 method: 'government',
                 promise: '1/0',
-                previous: null,
+                committed: null,
                 series: '1',
                 stage: 'appoint',
                 body: {
@@ -106,7 +106,7 @@ function prove (okay) {
     }, {
         method: 'government',
         promise: '2/0',
-        previous: null,
+        committed: null,
         series: '5',
         stage: 'appoint',
         body: { promise: '2/0', majority: [ 0, 1 ] }
@@ -130,7 +130,7 @@ function prove (okay) {
     }, {
         method: 'government',
         promise: '2/0',
-        previous: null,
+        committed: null,
         series: '8',
         stage: 'acclimated',
         body: { promise: '2/0', majority: [ 0, 1 ] }
@@ -144,7 +144,7 @@ function prove (okay) {
         stage: 'appoint',
         promise: '3/0',
         series: '9',
-        previous: null,
+        committed: null,
         body: { promise: '3/0', majority: [ 0, 1, 2 ] }
     }, null ], 'shift')
     nodes[0].acclimated('3/0')
@@ -161,7 +161,7 @@ function prove (okay) {
             method: 'government',
             stage: 'acclimated',
             promise: '3/0',
-            previous: null,
+            committed: null,
             series: '10',
             body: { promise: '3/0', majority: [ 0, 1, 2 ] }
         }, null ]
@@ -213,7 +213,7 @@ function prove (okay) {
             method: 'government',
             stage: 'appoint',
             promise: '6/0',
-            previous: null,
+            committed: null,
             series: '17',
             body: { promise: '6/0', majority: [ 0, 2 ] }
         }, null ]

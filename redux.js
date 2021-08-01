@@ -42,8 +42,6 @@ class Consensus extends events.EventEmitter {
             promise: '0/0',
             majority: []
         }
-        // Last message added to the atomic log.
-        this._previous = null
         // External Paxos promise and internal series number of most recent
         // message received.
         this._top = {
@@ -58,7 +56,9 @@ class Consensus extends events.EventEmitter {
         this._arriving = false
         // Pause when we fail to send, caller will resume us.
         this.paused = false
+        // Current submission into the atomic log.
         this._submitted = null
+        // Last message added to the atomic log.
         this._committed = null
         this._series = 0
     }
@@ -110,7 +110,7 @@ class Consensus extends events.EventEmitter {
                         method: 'reset',
                         government: JSON.parse(JSON.stringify(this.government)),
                         top: JSON.parse(JSON.stringify(this._top)),
-                        previous: this._previous,
+                        committed: this._committed,
                         arrivals: write.to.filter(to => {
                             return ! ~this.government.majority.indexOf(to)
                         })
@@ -121,7 +121,7 @@ class Consensus extends events.EventEmitter {
                             method: 'government',
                             stage: write.stage,
                             promise: write.promise,
-                            previous: this._previous,
+                            committed: this._committed,
                             series: (++this._next).toString(),
                             body: write.government
                         }
@@ -175,7 +175,7 @@ class Consensus extends events.EventEmitter {
         // government a majority of us alone so we send the initial government
         // to ourselves.
         if (majority.length == 1) {
-            this._previous = null
+            this._committed = null
             this.log.push({ method: 'reset' })
             this._top = {
                 promise: '0/0',
@@ -276,7 +276,7 @@ class Consensus extends events.EventEmitter {
             if (register != null) {
                 this._commit(now, register, top)
             }
-            entry.body.previous = null
+            entry.body.committed = null
             const compare = Monotonic.compare(government.promise, this.government.promise)
             if (stage == 'appoint') {
                 assert(compare > 0)
@@ -302,7 +302,7 @@ class Consensus extends events.EventEmitter {
                 })
             }
         }
-        this._previous = entry
+        this._committed = entry
         this.log.push(entry.body)
         this._next = this._top.series = series
     }
@@ -317,21 +317,21 @@ class Consensus extends events.EventEmitter {
             switch (message.method) {
             case 'write': {
                     if (message.body.method == 'government') {
-                        if (message.body.previous == null) {
-                            assert.equal(this._previous, null)
+                        if (message.body.committed == null) {
+                            assert.equal(this._committed, null)
                         } else {
-                            const { previous, series } = message.body
-                            assert.equal(BigInt(previous.body.series) + 1n, BigInt(series))
-                            assert.notEqual(this._previous, null)
+                            const { committed, series } = message.body
+                            assert.equal(BigInt(committed.body.series) + 1n, BigInt(series))
+                            assert.notEqual(this._committed, null)
                             // Switching on BigInt literals hurts Istanbul.
                             switch (
-                                String(BigInt(this._previous.body.series) - BigInt(previous.body.series))
+                                String(BigInt(this._committed.body.series) - BigInt(committed.body.series))
                             ) {
                             case '1':
-                                responses.push({ method: 'ahead', previous: this._previous })
+                                responses.push({ method: 'ahead', committed: this._committed })
                                 break
                             case '-1':
-                                this._commit(0, previous, this._top)
+                                this._commit(0, committed, this._top)
                                 break
                             case '0':
                                 break
@@ -352,7 +352,7 @@ class Consensus extends events.EventEmitter {
                 if (~message.arrivals.indexOf(this._address)) {
                     this.government = message.government
                     this._top = message.top
-                    this._previous = message.previous
+                    this._committed = message.committed
                     this._arriving = true
                     this._submitted = null
                 }
@@ -391,13 +391,13 @@ class Consensus extends events.EventEmitter {
         for (const to in responses) {
             for (const message of responses[to]) {
                 assert.equal(message.method, 'ahead')
-                const { previous } = message
+                const { committed } = message
                 const series = {
-                    here: BigInt(this._previous.body.series),
-                    there: BigInt(previous.body.series)
+                    here: BigInt(this._committed.body.series),
+                    there: BigInt(committed.body.series)
                 }
                 assert.equal(series.here + 1n, series.there)
-                this._commit(0, previous, this._top)
+                this._commit(0, committed, this._top)
                 const submitted = this._submitted
                 this._submitted = null
                 console.log(request.messages[0])
