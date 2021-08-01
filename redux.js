@@ -60,6 +60,7 @@ class Consensus extends events.EventEmitter {
         this.paused = false
         this._submitted = null
         this._committed = null
+        this._series = 0
     }
 
     _submit () {
@@ -78,15 +79,23 @@ class Consensus extends events.EventEmitter {
                 series: submission.series
             })
             if (submission.method == 'government') {
-                this.outbox.push({ method: 'send', to: submission.to, messages })
+                this.outbox.push({
+                    method: 'send',
+                    series: this._series,
+                    to: submission.to,
+                    messages
+                })
                 return
             }
         }
 
+        return this._actuallySubmit(messages, to)
+    }
+
+    _actuallySubmit (messages = [], to = []) {
         // Same here, if we have a commit going out we don't want to send a
         // government along as a subsequent write. A new government will have a
         // different set of addressees.
-
         if (
             this._writes.length != 0 &&
             (
@@ -138,7 +147,7 @@ class Consensus extends events.EventEmitter {
         }
 
         if (messages.length) {
-            this.outbox.push({ method: 'send', to, messages })
+            this.outbox.push({ method: 'send', series: this._series, to, messages })
         }
     }
 
@@ -368,7 +377,10 @@ class Consensus extends events.EventEmitter {
     //
     response (request, responses) {
         const successful = request.to.filter(to => ! responses[to]).length == 0
-        if (!successful) {
+        if (request.series != this._series) {
+            console.log(request.series, this._series)
+        }
+        if (! successful) {
             // TODO Retry message.
             return false
         }

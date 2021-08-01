@@ -51,6 +51,7 @@ function prove (okay) {
     let shift = pulses[0].shift()
     okay(shift, {
         method: 'send',
+        series: 0,
         to: [ 0 ],
         messages: [{
             method: 'reset',
@@ -78,6 +79,7 @@ function prove (okay) {
     shift = pulses[0].shift()
     okay(shift, {
         method: 'send',
+        series: 0,
         to: [ 0 ],
         messages: [{ method: 'commit', promise: '1/0', series: '1' }]
     }, 'government commit')
