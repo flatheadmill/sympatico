@@ -1,3 +1,41 @@
+## Sat Jul 31 23:46:43 CDT 2021
+
+Coming back to this and looking to remove the application of routing messages
+and to simply have the partitioned two-phase commit. Applications can be built
+atop this.
+
+Offhand, I'm going to stipulate that we don't accommodate shrinkage. Not as a
+matter of course. I can't really imagine a production implementation that would
+happily shrink in size due to gradual failure. When you lose an instance it
+ought to be replaced and if it isn't replaced then you ought to be notified that
+something is terribly wrong with your cluster. To rebalance the participants
+across multiple machines and then wait to expand, it creates more work to do the
+rebalancing, especially if we are trying to keep this simple map of left and
+right in arrival order. When a new particiant arrives to relieve the load we can
+slot them into the spot where failed participants are missing.
+
+Also, I want to translate the layout table to simple list of majorities rather
+than plucking them each time. Would be easier to assemble in testing.
+
+Growing does require a rebalance to keep this simple distribution based on
+arrival order, but the assumption is that you have the capacity to grow, to do
+all the shuffling necessary and that you're running normally so you have the
+time.
+
+Then you have this partitioned two-phase commit and something like Diffuser can
+have a relatively zero downtime unscheduled departure, and partitioned so that
+only a subset of the participants return errors during the departure.
+
+Also, no intention on preserving the submission queue for departed leaders.
+Departed followers could be more challenging. We could get a new government and
+resubmit, which is what we do in Paxos, and maybe someday we shall, but for now
+we should probably give up if we can. Can we? If we have successfully written
+and then we want to give up then how do we erase what we've written. Okay, so
+this is probably not the way to go. Recall that we don't know if something has
+successfully written unless we see it coming.
+
+Seem to recall how this works in Paxos though.
+
 ## Tue Sep  1 01:44:57 CDT 2020
 
 Returning to this project trying to determine why I'm syncing a backlog. What is
