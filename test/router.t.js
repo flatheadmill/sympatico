@@ -166,7 +166,7 @@ async function prove (okay) {
     const Router = require('../router')
     const routers = []
     for (let i = 0; i < 3; i++) {
-        routers.push(new Router(destructible.durable([ 'router', i ]), {
+        routers.push(new Router(destructible.durable(`router.${i}`), {
             extractor: extractor,
             transport: transport,
             hash: value => value,
@@ -174,6 +174,6 @@ async function prove (okay) {
             address: i
         }))
     }
-    destructible.durable('test', test(okay, routers))
-    await destructible.destructed
+    await destructible.ephemeral('test', test(okay, routers))
+    await destructible.destroy().promise
 }

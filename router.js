@@ -22,7 +22,7 @@ class Router extends events.EventEmitter {
         this._extractor = extractor
         this._transport = transport
         for (let i = 0; i < buckets; i++) {
-            const consensus = new Consensus(destructible.durable([ 'consensus', i ]), transport, this, i)
+            const consensus = new Consensus(destructible.durable(`consensus.${i}`), transport, this, i)
             this.shifters.push(consensus.log.shifter().sync)
             this.buckets.push(consensus)
         }
