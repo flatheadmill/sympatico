@@ -5,8 +5,14 @@ const events = require('events')
 // An async/await queue.
 const { Queue } = require('avenue')
 
+const { coalesce } = require('extant')
+
 // Ever increasing namespaced identifiers.
 const Monotonic = require('paxos/monotonic')
+
+// Without mapping we can reuse Islander. We simply submit a map that is always
+// empty, which would be the case. Oh, well, remapping isn't difficult, though,
+// is it? It is only for normal expansions.
 
 // A per-bucket participant. No bucket property is kept in the participant, that
 // would be a property of the address. No bucketing here at all, this is just a
@@ -30,7 +36,7 @@ class Consensus extends events.EventEmitter {
         // Atomic log.
         this.log = new Queue
         // Current first stage of write.
-        this._write = null
+        this._register = null
         // Initial bogus government.
         this.government = {
             promise: '0/0',
@@ -54,6 +60,8 @@ class Consensus extends events.EventEmitter {
         this._arriving = false
         // Pause when we fail to send, caller will resume us.
         this.paused = false
+        this._submitted = null
+        this._committed = null
     }
 
     _submit () {
@@ -157,7 +165,6 @@ class Consensus extends events.EventEmitter {
         // If we are we are bootstrapping, so we cheat and make the bogus first
         // government a majority of us alone so we send the initial government
         // to ourselves.
-        const combined = majority.slice()
         if (majority.length == 1) {
             this._previous = null
             this.log.push({ method: 'reset' })
@@ -170,10 +177,8 @@ class Consensus extends events.EventEmitter {
                 majority: majority
             }
         }
-        this._appointment = {
-            promise: promise,
-            majority: majority
-        }
+        this._appointment = { promise, majority }
+        const combined = majority.slice()
         if (this.government.majority.length < majority.length) {
             combined.push.apply(combined, this.government.majority.filter(address => {
                 return !~combined.indexOf(address)
@@ -184,6 +189,7 @@ class Consensus extends events.EventEmitter {
             method: 'government',
             stage: 'appoint',
             promise: promise,
+            register: coalesce(this._submitted, this._register, this._committed),
             government: { promise: promise, majority: combined }
         })
         this._submitIf()
@@ -257,7 +263,10 @@ class Consensus extends events.EventEmitter {
         // can abandon an on-boarding.
         const { promise, series } = entry.body
         if (entry.body.method == 'government') {
-            const { stage, body: government } = entry.body
+            const { register, stage, body: government } = entry.body
+            if (register != null) {
+                this._commit(now, register, top)
+            }
             entry.body.previous = null
             const compare = Monotonic.compare(government.promise, this.government.promise)
             if (stage == 'appoint') {
@@ -271,7 +280,7 @@ class Consensus extends events.EventEmitter {
             if (
                 this.government.majority.length != 1 &&
                 this.government.majority[0] == this._address &&
-                this._address && stage == 'appoint'
+                stage == 'appoint'
             ) {
                 this.log.push({ method: 'snapshot', promise: this.government.promise })
             }
@@ -322,12 +331,12 @@ class Consensus extends events.EventEmitter {
                             }
                         }
                     }
-                    this._write = message
+                    this._register = message
                 }
                 break
             case 'commit':
-                const write = this._write
-                this._write = null
+                const write = this._register
+                this._register = null
                 this._commit(0, write, this._top)
                 break
             case 'reset':
@@ -365,6 +374,8 @@ class Consensus extends events.EventEmitter {
             // TODO Retry message.
             return false
         }
+        // We will only get responses if they are rejections, if the participant
+        // is ahead of us in the message log.
         for (const to in responses) {
             for (const message of responses[to]) {
                 assert.equal(message.method, 'ahead')
@@ -376,6 +387,7 @@ class Consensus extends events.EventEmitter {
                 assert.equal(series.here + 1n, series.there)
                 this._commit(0, previous, this._top)
                 const submission = this._submissions.shift()
+                console.log(request.messages[0])
                 assert.equal(request.messages[0].method, 'reset')
                 this.paused = true
                 this._writes.unshift({
@@ -386,9 +398,7 @@ class Consensus extends events.EventEmitter {
                     government: request.messages[1].body.body
                 })
                 // TODO Add timestamp.
-                this.outbox.push({
-                    method: 'rejected'
-                })
+                this.outbox.push({ method: 'rejected' })
                 return false
             }
         }
