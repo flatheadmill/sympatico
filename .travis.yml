@@ -1,0 +1,20 @@
+sudo: false
+
+language: node_js
+
+node_js:
+  - '12'
+  - '14'
+  - '16'
+
+branches:
+  only:
+    - master
+    - travis-ci
+
+install:
+  - npm install --no-package-lock --no-save
+  - npm install -g nyc prove
+
+script:
+  - nyc npm test
