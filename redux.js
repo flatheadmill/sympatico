@@ -58,7 +58,7 @@ class Consensus extends events.EventEmitter {
         this._arriving = false
         // Pause when we fail to send, caller will resume us.
         this.paused = false
-        this._submitted2 = null
+        this._submitted = null
         this._committed = null
         this._series = 0
     }
@@ -71,18 +71,18 @@ class Consensus extends events.EventEmitter {
         // outstanding write is a government, in which case we want it to be
         // resolved before we start sending new messages.
 
-        if (this._submitted2 != null) {
-            const submission2 = this._submitted2
+        if (this._submitted != null) {
+            const submitted = this._submitted
             messages.push({
                 method: 'commit',
-                promise: submission2.body.promise,
-                series: submission2.body.series
+                promise: submitted.body.promise,
+                series: submitted.body.series
             })
-            if (submission2.body.method == 'government') {
+            if (submitted.body.method == 'government') {
                 this.outbox.push({
                     method: 'send',
                     series: this._series,
-                    to: submission2.to,
+                    to: submitted.to,
                     messages
                 })
                 return
@@ -143,7 +143,7 @@ class Consensus extends events.EventEmitter {
                 break
             }
             const { method, promise, series } = messages[messages.length - 1].body
-            this._submitted2 = messages[messages.length - 1]
+            this._submitted = messages[messages.length - 1]
         } else {
             to.push.apply(to, this.government.majority)
         }
@@ -154,7 +154,7 @@ class Consensus extends events.EventEmitter {
     }
 
     _submitIf () {
-        if (! this.paused && this._submitted2 == null) {
+        if (! this.paused && this._submitted == null) {
             this._submit()
         }
     }
@@ -198,7 +198,7 @@ class Consensus extends events.EventEmitter {
             method: 'government',
             stage: 'appoint',
             promise: promise,
-            register: coalesce(this._submitted2, this._register, this._committed),
+            register: coalesce(this._submitted, this._register, this._committed),
             government: { promise: promise, majority: combined }
         })
         this._submitIf()
@@ -354,7 +354,7 @@ class Consensus extends events.EventEmitter {
                     this._top = message.top
                     this._previous = message.previous
                     this._arriving = true
-                    this._submitted2 = null
+                    this._submitted = null
                 }
                 break
             }
@@ -398,16 +398,16 @@ class Consensus extends events.EventEmitter {
                 }
                 assert.equal(series.here + 1n, series.there)
                 this._commit(0, previous, this._top)
-                const submission2 = this._submitted2
-                this._submitted2 = null
+                const submitted = this._submitted
+                this._submitted = null
                 console.log(request.messages[0])
                 assert.equal(request.messages[0].method, 'reset')
                 this.paused = true
                 this._writes.unshift({
-                    to: submission2.to,
+                    to: submitted.to,
                     method: 'government',
                     stage: 'appoint',
-                    promise: submission2.body.promise,
+                    promise: submitted.body.promise,
                     government: request.messages[1].body.body
                 })
                 // TODO Add timestamp.
@@ -418,25 +418,25 @@ class Consensus extends events.EventEmitter {
         for (const message of request.messages) {
             switch (message.method) {
             case 'commit': {
-                    assert.notEqual(this._submitted2, null)
-                    const committed2 = this._submitted2
-                    this._submitted2 = null
+                    assert.notEqual(this._submitted, null)
+                    const submitted = this._submitted
+                    this._submitted = null
                     assert.deepEqual(message, {
                         method: 'commit',
-                        promise: committed2.body.promise,
-                        series: committed2.body.series
+                        promise: submitted.body.promise,
+                        series: submitted.body.series
                     })
                 }
                 break
             case 'write': {
-                    assert.notEqual(this._submitted2, null)
-                    const submission2 = this._submitted2
+                    assert.notEqual(this._submitted, null)
+                    const submitted = this._submitted
                     const { method, promise, series } = message.body
                     assert.deepEqual({ method, to: request.to, promise, series }, {
-                        to: submission2.to,
-                        method: submission2.body.method,
-                        promise: submission2.body.promise,
-                        series: submission2.body.series
+                        to: submitted.to,
+                        method: submitted.body.method,
+                        promise: submitted.body.promise,
+                        series: submitted.body.series
                     })
                     this._submit()
                 }
