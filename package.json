@@ -1,5 +1,5 @@
 {
-    "name":                 "coworker",
+    "name":                 "sympatico",
     "version":              null,
     "private":              true,
     "description":
@@ -17,13 +17,13 @@
                             "email": "chrite.demarius@gmail.com",
                             "web":   "https://github.com/demarius"
     }],
-    "homepage":             "https://bigeasy.github.io/coworker",
-    "bugs":                 "https://github.com/bigeasy/coworker/issues",
+    "homepage":             "https://bigeasy.github.io/sympatico",
+    "bugs":                 "https://github.com/bigeasy/sympatico/issues",
     "license":              "MIT",
     "repository":
     {
                             "type": "git",
-                            "url": "bigeasy/coworker"
+                            "url": "bigeasy/sympatico"
     },
     "dependencies":
     {
@@ -40,7 +40,7 @@
     {
                             "proof":                        "^9.0.3"
     },
-    "main":                 "coworker",
+    "main":                 "sympatico",
     "scripts":
     {
                             "test": "proof test/*.t.js"
