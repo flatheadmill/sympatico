@@ -8,7 +8,7 @@ const RBTree = require('bintrees').RBTree
 const Monotonic = require('paxos/monotonic')
 
 // An evented queue.
-const Queue = require('avenue')
+const { Queue } = require('avenue')
 
 // Appears that we use our map of particpants and the buckets assigned to them
 // as the definitive, latest table and just keep track of whether that has

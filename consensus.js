@@ -7,7 +7,7 @@
 // about the networking. Will slow down joins, but speed up development.
 const assert = require('assert')
 
-const Avenue = require('avenue')
+const { Queue } = require('avenue')
 const Monotonic = require('paxos/monotonic')
 const events = require('events')
 const Pause = require('./pause')
@@ -27,11 +27,11 @@ class Paxos extends events.EventEmitter {
         }
         this.pause = new Pause
         this.leader = router.address
-        this.log = new Avenue()
-        this.snapshot = new Avenue()
-        this.outbox = new Avenue()
+        this.log = new Queue()
+        this.snapshot = new Queue()
+        this.outbox = new Queue()
         this._tail = this.log.shifter().sync
-        this.pinged = new Avenue()
+        this.pinged = new Queue()
         this.destroyed = false
         this._writes = [ [] ]
         this._transport = transport

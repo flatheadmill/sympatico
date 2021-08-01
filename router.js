@@ -6,7 +6,7 @@ const { coalesce } = require('extant')
 const fnv = require('./fnv')
 const Keyify = require('keyify')
 
-const Queue = require('avenue')
+const { Queue } = require('avenue')
 
 const Consensus = require('./consensus')
 

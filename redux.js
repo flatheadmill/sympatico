@@ -3,7 +3,7 @@ const assert = require('assert')
 const events = require('events')
 
 // An async/await queue.
-const Queue = require('avenue')
+const { Queue } = require('avenue')
 
 // Ever increasing namespaced identifiers.
 const Monotonic = require('paxos/monotonic')
