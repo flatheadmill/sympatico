@@ -44,10 +44,7 @@ class Consensus extends events.EventEmitter {
         }
         // External Paxos promise and internal series number of most recent
         // message received.
-        this._top = {
-            promise: '0/0',
-            series: '0'
-        }
+        this._top = { promise: '0/0/0' }
         // Next message in series.
         this._next = 0n
         // Queue of writes to submit.
@@ -74,11 +71,7 @@ class Consensus extends events.EventEmitter {
 
         if (this._submitted != null) {
             const submitted = this._submitted
-            messages.push({
-                method: 'commit',
-                promise: submitted.body.promise,
-                series: submitted.body.series
-            })
+            messages.push({ method: 'commit', promise: submitted.body.promise })
             if (submitted.body.method == 'government') {
                 this.outbox.push({
                     method: 'send',
@@ -107,10 +100,10 @@ class Consensus extends events.EventEmitter {
             to.push.apply(to, write.to || this.government.majority)
             switch (write.method) {
             case 'government': {
-                    this._promise  = write.government.promise
+                    this._promise = write.government.promise
                     const map = {}
                     for (const write of this._writes) {
-                        const promise = this._promise = Monotonic.increment(this._promise, 1)
+                        const promise = this._promise = Monotonic.increment(this._promise, 2)
                         map[write.promise] = promise
                         write.promise = promise
                     }
@@ -119,6 +112,7 @@ class Consensus extends events.EventEmitter {
                         government: JSON.parse(JSON.stringify(this.government)),
                         top: JSON.parse(JSON.stringify(this._top)),
                         committed: this._committed,
+                        register: coalesce(this._submitted, this._register, this._committed),
                         arrivals: write.to.filter(to => {
                             return ! ~this.government.majority.indexOf(to)
                         })
@@ -130,8 +124,10 @@ class Consensus extends events.EventEmitter {
                             stage: write.stage,
                             promise: write.promise,
                             committed: this._committed,
-                            series: (++this._next).toString(),
                             map: map,
+                            arrivals: write.to.filter(to => {
+                                return ! ~this.government.majority.indexOf(to)
+                            }),
                             body: write.government
                         }
                     })
@@ -143,15 +139,13 @@ class Consensus extends events.EventEmitter {
                         to: to.slice(),
                         body: {
                             method: 'entry',
-                            promise: this.government.promise,
-                            series: (++this._next).toString(),
+                            promise: write.promise,
                             body: write.body
                         }
                     })
                 }
                 break
             }
-            const { method, promise, series } = messages[messages.length - 1].body
             this._submitted = messages[messages.length - 1]
         } else {
             to.push.apply(to, this.government.majority)
@@ -182,58 +176,32 @@ class Consensus extends events.EventEmitter {
         }
         // If we are we are bootstrapping, so we cheat and make the bogus first
         // government a majority of us alone so we send the initial government
-        // to ourselves.
+        // to ourselves. We don't leave the majority empty because otherwise we
+        // will reset ourselves and clear out our `_submitted` poperty.
         if (majority.length == 1) {
             this._committed = null
             this.log.push({ method: 'reset' })
-            this._top = {
-                promise: '0/0',
-                series: '0'
-            }
+            this._top = { promise: '0/0/0' }
             this.government = {
-                promise: '0/0',
+                promise: '0/0/0',
                 majority: majority
             }
         }
-        this._appointment = { promise, majority }
         const combined = majority.slice()
         if (this.government.majority.length < majority.length) {
             combined.push.apply(combined, this.government.majority.filter(address => {
                 return !~combined.indexOf(address)
             }))
         }
+        this._series++
         this._writes.unshift({
             to: majority,
             method: 'government',
             stage: 'appoint',
-            promise: promise,
-            register: coalesce(this._submitted, this._register, this._committed),
-            government: { promise: promise, majority: combined }
+            promise: promise + '/0',
+            government: { promise: promise + '/0', majority: combined }
         })
-        this._submitIf()
-    }
-
-    // Acclimation is transmitted through the outer Paxos. Unlikely that all
-    // participants will acclimate before a new appointment. We won't do this
-    // during orderly growth of the participant population, only during
-    // abdication, and then it would mean that a participant has become
-    // unreachable, but it still somehow able to enqueue its application message
-    // after the abdication message that removes it.
-
-    acclimated (promise) {
-        assert(this._appointment != null)
-        if (this._appointment.promise == promise) {
-            const { majority } = this._appointment
-            this._appointment = null
-            this._writes.unshift({
-                to: majority,
-                method: 'government',
-                stage: 'acclimated',
-                promise: promise,
-                government: { promise, majority }
-            })
-            this._submitIf()
-        }
+        this._actuallySubmit()
     }
 
     // Hold onto this thought, we really want to explicitly reset instances so
@@ -279,26 +247,20 @@ class Consensus extends events.EventEmitter {
         // We can't trust our own government, we might be rejoining and it would
         // therefore be stale. There's no way to explicitly exclude, because we
         // can abandon an on-boarding.
-        const { promise, series } = entry.body
+        const { promise } = entry.body
         if (entry.body.method == 'government') {
-            const { register, stage, body: government } = entry.body
+            const { register, body: government } = entry.body
             if (register != null) {
                 this._commit(now, register, top)
             }
             entry.body.committed = null
             const compare = Monotonic.compare(government.promise, this.government.promise)
-            if (stage == 'appoint') {
-                assert(compare > 0)
-            } else {
-                assert.equal(compare, 0)
-            }
+            assert(compare >= 0)
             this._top.promise = government.promise
             this.government = government
-            // TODO Different somehow with abdicate?
             if (
                 this.government.majority.length != 1 &&
-                this.government.majority[0] == this._address &&
-                stage == 'appoint'
+                this.government.majority[0] == this._address
             ) {
                 this.log.push({ method: 'snapshot', promise: this.government.promise })
             }
@@ -313,7 +275,6 @@ class Consensus extends events.EventEmitter {
         }
         this._committed = entry
         this.log.push(entry.body)
-        this._next = this._top.series = series
     }
 
     request (request) {
@@ -328,25 +289,11 @@ class Consensus extends events.EventEmitter {
                     if (message.body.method == 'government') {
                         if (message.body.committed == null) {
                             assert.equal(this._committed, null)
-                        } else {
-                            const { committed, series } = message.body
-                            assert.equal(BigInt(committed.body.series) + 1n, BigInt(series))
+                        } else if (!~message.body.arrivals.indexOf(this._address)) {
+                            const { committed } = message.body
                             assert.notEqual(this._committed, null)
                             // Switching on BigInt literals hurts Istanbul.
-                            switch (
-                                String(BigInt(this._committed.body.series) - BigInt(committed.body.series))
-                            ) {
-                            case '1':
-                                responses.push({ method: 'ahead', committed: this._committed })
-                                break
-                            case '-1':
-                                this._commit(0, committed, this._top)
-                                break
-                            case '0':
-                                break
-                            default:
-                                throw new Error('off')
-                            }
+                            this._commit(0, committed, this._top)
                         }
                     }
                     this._register = message
@@ -364,6 +311,8 @@ class Consensus extends events.EventEmitter {
                     this._committed = message.committed
                     this._arriving = true
                     this._submitted = null
+                } else if (message.register != null) {
+                    this._commit(0, message.register, this._top)
                 }
                 break
             }
@@ -388,10 +337,7 @@ class Consensus extends events.EventEmitter {
     //
     response (request, responses) {
         const successful = request.to.filter(to => ! responses[to]).length == 0
-        if (request.series != this._series) {
-            console.log(request.series, this._series)
-        }
-        if (! successful) {
+        if (! successful || request.series != this._series) {
             // TODO Retry message.
             return false
         }
@@ -401,11 +347,6 @@ class Consensus extends events.EventEmitter {
             for (const message of responses[to]) {
                 assert.equal(message.method, 'ahead')
                 const { committed } = message
-                const series = {
-                    here: BigInt(this._committed.body.series),
-                    there: BigInt(committed.body.series)
-                }
-                assert.equal(series.here + 1n, series.there)
                 this._commit(0, committed, this._top)
                 const submitted = this._submitted
                 this._submitted = null
@@ -430,22 +371,17 @@ class Consensus extends events.EventEmitter {
                     assert.notEqual(this._submitted, null)
                     const submitted = this._submitted
                     this._submitted = null
-                    assert.deepEqual(message, {
-                        method: 'commit',
-                        promise: submitted.body.promise,
-                        series: submitted.body.series
-                    })
+                    assert.deepEqual(message, { method: 'commit', promise: submitted.body.promise })
                 }
                 break
             case 'write': {
                     assert.notEqual(this._submitted, null)
                     const submitted = this._submitted
-                    const { method, promise, series } = message.body
-                    assert.deepEqual({ method, to: request.to, promise, series }, {
+                    const { method, promise } = message.body
+                    assert.deepEqual({ method, to: request.to, promise }, {
                         to: submitted.to,
                         method: submitted.body.method,
-                        promise: submitted.body.promise,
-                        series: submitted.body.series
+                        promise: submitted.body.promise
                     })
                     this._submit()
                 }
@@ -462,7 +398,7 @@ class Consensus extends events.EventEmitter {
     }
 
     enqueue (message) {
-        const promise = this._promise = Monotonic.increment(this._promise, 1)
+        const promise = this._promise = Monotonic.increment(this._promise, 2)
         this._writes.push({ method: 'write', promise: promise, body: message })
         this._submitIf()
         return promise

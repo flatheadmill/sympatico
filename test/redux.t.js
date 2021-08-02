@@ -1,4 +1,4 @@
-require('proof')(11, prove)
+require('proof')(5, prove)
 
 function prove (okay) {
     const Consensus = require('../redux')
@@ -47,30 +47,31 @@ function prove (okay) {
         return shifted
     }
 
-    nodes[0].appoint('1/0', [ 0 ])
+    nodes[0].appoint('1/1', [ 0 ])
     let shift = pulses[0].shift()
     okay(shift, {
         method: 'send',
-        series: 0,
+        series: 1,
         to: [ 0 ],
         messages: [{
             method: 'reset',
-            government: { promise: '0/0', majority: [ 0 ] },
-            top: { promise: '0/0', series: '0' },
+            government: { promise: '0/0/0', majority: [ 0 ] },
+            top: { promise: '0/0/0' },
             committed: null,
+            register: null,
             arrivals: []
         }, {
             method: 'write',
             to: [ 0 ],
             body: {
                 method: 'government',
-                promise: '1/0',
+                promise: '1/1/0',
                 committed: null,
-                series: '1',
                 stage: 'appoint',
                 map: {},
+                arrivals: [],
                 body: {
-                    promise: '1/0',
+                    promise: '1/1/0',
                     majority: [ 0 ]
                 }
             }
@@ -81,22 +82,38 @@ function prove (okay) {
     shift = pulses[0].shift()
     okay(shift, {
         method: 'send',
-        series: 0,
+        series: 1,
         to: [ 0 ],
-        messages: [{ method: 'commit', promise: '1/0', series: '1' }]
+        messages: [{ method: 'commit', promise: '1/1/0' }]
     }, 'government commit')
     send(nodes[0], shift)
-    shift = pulses[0].shift()
-    send(nodes[0], shift)
-    shift = pulses[0].shift()
-    send(nodes[0], shift)
-    shift = logs[0].shift()
-    shift = logs[0].shift()
-    nodes[0].acclimated('1/0')
+    okay([
+        logs[0].shift(), logs[0].shift(), logs[0].shift()
+    ], [{
+        method: 'reset'
+    }, {
+        method: 'government',
+        stage: 'appoint',
+        promise: '1/1/0',
+        committed: null,
+        map: {},
+        arrivals: [],
+        body: {
+            promise: '1/1/0',
+            majority: [ 0 ]
+        }
+    }, null ], 'bootstrap commit')
     sendAll()
-    nodes[0].enqueue(1)
+    okay([
+        logs[0].shift(), logs[0].shift()
+    ], [{
+        method: 'entry',
+        promise: '1/1/1',
+        body: 1
+    }, null ], 'single write')
     nodes[0].enqueue(2)
-    nodes[0].appoint('2/0', [ 0, 1 ])
+    nodes[0].enqueue(3)
+    nodes[0].appoint('1/2', [ 0, 1 ])
     sendAll()
     okay([
         logs[1].shift(), logs[1].shift(), logs[1].shift(), logs[1].shift()
@@ -106,18 +123,18 @@ function prove (okay) {
         leader: 0
     }, {
         method: 'government',
-        promise: '2/0',
+        promise: '1/2/0',
         committed: null,
-        series: '5',
         stage: 'appoint',
-        map: { '1/2': '2/1' },
-        body: { promise: '2/0', majority: [ 0, 1 ] }
+        map: { '1/1/3': '1/2/1' },
+        arrivals: [ 1 ],
+        body: { promise: '1/2/0', majority: [ 0, 1 ] }
     }, {
         method: 'entry',
-        promise: '2/0',
-        series: '6',
-        body: 2
+        promise: '1/2/1',
+        body: 3
     }, null ], 'shift')
+    return
     nodes[0].enqueue(3)
     sendAll()
     nodes[0].acclimated('2/0')

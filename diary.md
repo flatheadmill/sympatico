@@ -1,3 +1,87 @@
+## Sun Aug  1 19:25:59 CDT 2021
+
+Expanding buckets. We can do this the way we do it in diffuser, growing by
+doubling. When we double we can't simply duplicate. We have to go through a
+growing step first. We expand to the doubled location with its new left and
+right backup, but when we send the snapshot there is a key, or hashed value, or
+something along those lines, and each entry is inspected and only added if the
+key is correct for the new bucket. We already have a key for the messages. These
+would be keys that identify the objects built by the state machines, say, for
+example, entries in a key/value store.
+
+This would occur before redistributing the buckets to a new machine. So the
+bucekts would be on the same machines, duplicated. We may create two completely
+new instances of the consensus algorithm so that we copy the data completely out
+of the old storage into two split stores, rather than telling the user to okay,
+go ahead and delete the the old stuff. We could do it one at a time, perhaps.
+
+This is complicated, though. When we write the documentation we'll have a notion
+of exactly how much paritioning logic is exposed to the user. If it is a lot,
+then we can go ahead and add this without to much documentation costs.
+
+Until then we can suggest a fixed number of buckets, like 1024, and the user
+ought to have some sort of failover strategy that is regional if we're talking
+about having 1024+ paritcipants in a consensus algorithm, so maybe they can use
+that instead.
+
+## Sun Aug  1 18:54:32 CDT 2021
+
+I'm move the details of growing a consensus out of the consensus algorithm. It
+will implement whatever majority you give it, no questions asked.
+
+THe logic for determining the steps will be external. This simplifies the
+implementation.
+
+Another simplification is taking the last submission, register value or
+committed value and stuffing it into the new government. Need to make a note
+that the committed value is necessary because we may be taking leadership and
+our remaining member may have the value only it its register and we're going to
+overwrite the register when we push our new government. That is, the other
+member got the write but did not get the commit. We got the commit so our
+register was cleared. This value has been learned by the wider world so we must
+preserve it in our logs.
+
+Currently considering building on the Paxos promise to create a three part
+promise but it occurs to me that we can easily maintain an ever-increasing
+series number in Paxos, so I ought to back that out, work on keeping this
+somehwat simpler, less to document there and easier to explain in the
+documentation.
+
+Got ideas for how we move buckets around. Can see that is should be done one
+bucket at a time. This way, the expansion from 3 to 6 participants is no longer
+something to fear. It will be happening one at a time, not en masse. Migration
+is much more fiddly.
+
+Departure is still quick, though. Everyone just slams down to the smaller
+majority.
+
+Recall that you go from old majority to combined majority. If a machine is lost
+during this transition you can just go to the old majority or a subset of the
+old majority if one of the machines is in the old majority. When the new members
+acclimate you can then switch the leader. If an error occurs before the leader
+switch you can move to the old majority. After the leader switch (this all runs
+through the Paxos) then you can remove the difference of the old majority. Now
+if any error occurs you fail to a subset of the new majority.
+
+Possibly new leader ship can pull the queued entries, possibly. Some entries
+must be lost though. New government gets written to register. We can say that
+having a new greater government written to the register will pause the old
+leader and the old leader will send its queued messages. Any messages arriving
+before the next commit can be dropped. Or else we can go ahead and start
+forwarding requests, but we really have to change our thinking. We assume that
+when we are told that we are the new leader it is so. We also have a race
+condition where there are forwards but we haven't become the leader yet, we
+might still be pulling the existing queue from the old leader, but the old
+leader is sending us new messages to queue via forwarding.
+
+Or we can just 503 for a wee little bit. As always, you're not going to know if
+you've enqueued unless you inspect the stream as it is built, so we are probably
+better off relying on that behavior in the client generally so it gets exercised
+more often.
+
+TODO Add a retry count in the outbound Islander messages. That retry count can
+be used to as a multipler on a back-off.
+
 ## Sat Jul 31 23:46:43 CDT 2021
 
 Coming back to this and looking to remove the application of routing messages
