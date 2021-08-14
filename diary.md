@@ -1,3 +1,11 @@
+## Sat Aug 14 06:23:13 CDT 2021
+
+Key are going to apply to submissions to this conensus algrithm, it needs to
+determine which leader to send a message to, but when we snapshot we are going
+to want to have the snapshot produce a key and value and null key would
+mean that it is some sort of meta information like a count or a version that
+ought to be shared between both versions.
+
 ## Sun Aug  1 19:25:59 CDT 2021
 
 Expanding buckets. We can do this the way we do it in diffuser, growing by
