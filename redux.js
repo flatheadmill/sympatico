@@ -10,28 +10,48 @@ const { coalesce } = require('extant')
 // Ever increasing namespaced identifiers.
 const Monotonic = require('paxos/monotonic')
 
-// Without mapping we can reuse Islander. We simply submit a map that is always
-// empty, which would be the case. Oh, well, remapping isn't difficult, though,
-// is it? It is only for normal expansions.
+// We can reused Islander without mapping. We can send a `null` map or otherwise
+// indicate a collapse and Islander will send a message to flush the its queue.
+// But, we'll probably implement napping. It isn't difficult.
 
-// A per-bucket participant. No bucket property is kept in the participant, that
-// would be a property of the address. No bucketing here at all, this is just a
-// two-phase commit machine.
+// This algorithm will be run per-bucket. There are no buckets within the
+// consensus algorithm. Each bucket runs an independent instance of the
+// consensus algorithm.
 
-// TODO No idea yet how we clear the queue. Probably submit a clear message and
-// it goes through like a normal message but the entry is called `'clear'`
-// instead of `'government'` or `'write'`.
+// TODO At some point we decided that we are going to maintain a government
+// number somehow so that the address has only two parts consistent with Paxos.
+// We can maintain this externally in our Paxos algorithm by incrementing a
+// government number. We can do it per bucket, but the government number simply
+// needs to be ever increasing, so it could be a single counter.
 
+// TODO When we usurp to rebalance and not as a result of a crash we can easily
+// preserve the submitted messages. In fact, we can be very certain of this by
+// virtue of having the leader abdicate, run a commit to create a new government
+// forwarding all the queued messages with a mapping and then forwarding
+// messages after we've begun our abdication.
+//
+// When we transition leaders the current leader will have a queue of messages
+// for which promises where issued, so that needs to get transferred to the new
+// leader and remapped. We will know definiatively when the abdication takes
+// place so the old leader can forward any incoming messages to the new leader.
+// The new leader can keep a staging queue of these incoming messages and
+// process them once it assumes leadership.
+//
+// Abdicate and usurp being separate seems like more work, but it probably
+// isn't. At the same time abdicate seems like it is easier to reason about
+// pushing the queue than pulling the queue, but it probably isn't. Streaming
+// the queue is a problem for the network implementation.
+
+//
 class Consensus extends events.EventEmitter {
     // The `address` locates another participant on the network.
 
     //
     constructor (address) {
         super()
-        // Address of a nother particpant on the network and among the buckets.
-        // This implementation is bucket un-aware.
+        // JSON-object opaque address identifying both host and bucket.
         this._address = address
-        // Outbox for message.
+        // Outbox for messages.
         this.outbox = new Queue
         // Atomic log.
         this.log = new Queue
@@ -107,6 +127,9 @@ class Consensus extends events.EventEmitter {
                         map[write.promise] = promise
                         write.promise = promise
                     }
+                    // TODO Not sure why we need a separate 'reset' message. Also, how
+                    // are the registerts nesting? It looks as though they are
+                    // overwriting and therefore losing history.
                     messages.push({
                         method: 'reset',
                         government: JSON.parse(JSON.stringify(this.government)),
@@ -392,6 +415,7 @@ class Consensus extends events.EventEmitter {
         return true
     }
 
+    // TODO This ought to be dead.
     resume () {
         this.paused = false
         this._submitIf()
