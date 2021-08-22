@@ -1,20 +1,26 @@
 const assert = require('assert')
 
 class Bucket {
-    static Null = class {
-        constructor () {
+    static Idle = class {
+        constructor (bucket) {
+            this.bucket = bucket
             this.promise = null
             this.majority = null
             this.active = false
         }
+
+        distribution (distribution) {
+            assert.equal(distribution.departed.length, 0, 'bootstrapping on departure')
+            return new Bucket.Bootstrap(this.bucket, distribution)
+        }
     }
 
     static Bootstrap  = class {
-        constructor (bucket, promise, majority) {
+        constructor (bucket, distribution) {
+            const instances = distribution.instances.concat(distribution.instances)
+            const majority = instances.slice(bucket.index, bucket.index + Math.max(distribution.instances.length, bucket.majoritySize))
             this.bucket = bucket
-            this.promise = promise
-            this.majority = majority.slice()
-            this.active = false
+            this.distribution = distribution
         }
 
         complete (promise) {
@@ -45,9 +51,10 @@ class Bucket {
         }
     }
 
-    constructor (index) {
+    constructor (index, majoritySize) {
         this.index = index
-        this._strategy = new Bucket.Null
+        this.majoritySize = majoritySize
+        this._strategy = new Bucket.Idle(this)
     }
 
     get active () {
@@ -60,6 +67,10 @@ class Bucket {
 
     get majority () {
         return this._strategy.majority
+    }
+
+    distribution (distribution) {
+        return this._strategy = this._strategy.distribution(distribution)
     }
 
     bootstrap (promise, majority) {
@@ -75,9 +86,4 @@ class Bucket {
     }
 }
 
-exports.Bucket = Bucket
-
-class Table {
-}
-
-exports.Table = Table
+module.exports = Bucket

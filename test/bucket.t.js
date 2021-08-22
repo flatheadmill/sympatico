@@ -1,8 +1,13 @@
 require('proof')(2, okay => {
-    const { Bucket } = require('../bucket')
-    const bucket = new Bucket(0)
+    const Bucket = require('../bucket')
+    const bucket = new Bucket(0, 3)
     okay(bucket.promise, null, 'null bucket promise')
     okay(bucket.majority, null, 'null bucket majority')
-    bucket.bootstrap('1/0', [ 0 ])
-    bucket.complete('1/0')
+    bucket.distribution({
+        promise: '1/0',
+        instances: [ '1/0' ],
+        from: [],
+        to: [ '1/0' ],
+        departed: []
+    })
 })
