@@ -38,7 +38,7 @@ require('proof')(5, async okay => {
             method: 'split',
             majority: {
                 left: [ '1/0', '2/0' ],
-                right: [ '2/0', '1/0' ]
+                right: [ '1/0', '2/0' ]
             }
         }, 'split')
         bucket.complete('split')

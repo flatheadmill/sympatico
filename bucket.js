@@ -70,8 +70,7 @@ class Bucket {
             this.distribution = distribution
             this.future = future
             const instances = distribution.instances.concat(distribution.instances)
-            this.left = instances.slice(bucket.index, bucket.index + Math.min(distribution.instances.length, bucket.majoritySize))
-            this.right = instances.slice(bucket.index + distribution.from.length, bucket.index + distribution.from.length + Math.min(distribution.instances.length, bucket.majoritySize))
+            this.right = this.left = instances.slice(bucket.index, bucket.index + Math.min(distribution.instances.length, bucket.majoritySize))
             // Until the instance count grows to double the majority size, we
             // will have some overlap.
             const combined = this.left.concat(this.right)
