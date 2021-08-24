@@ -8,9 +8,8 @@ require('proof')(5, async okay => {
     {
         const promise = bucket.distribution({
             promise: '1/0',
-            instances: [ '1/0' ],
-            from: [],
-            to: [ '1/0' ],
+            from: { instances: [], majority: [] },
+            to: { instances: [ '1/0' ], majority: [ '1/0' ] },
             departed: []
         })
         okay(shifter.shift(), {
@@ -24,9 +23,8 @@ require('proof')(5, async okay => {
     {
         const promise = bucket.distribution({
             promise: '2/0',
-            instances: [ '1/0', '2/0' ],
-            to: [ '1/0', '1/0' ],
-            from: [ '1/0' ],
+            to: { instances: [ '1/0', '2/0' ], majority: [ '1/0', '1/0' ] },
+            from: { instances: [ '1/0' ], majority: [ '1/0' ] },
             departed: []
         })
         okay(shifter.shift(), {

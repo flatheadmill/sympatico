@@ -21,9 +21,9 @@ class Bucket {
 
     static Bootstrap  = class {
         constructor (bucket, distribution, future) {
-            const instances = distribution.instances.concat(distribution.instances)
+            const instances = distribution.to.instances.concat(distribution.to.instances)
             this.step = 0
-            this.majority = instances.slice(bucket.index, bucket.index + Math.min(distribution.instances.length, bucket.majoritySize))
+            this.majority = instances.slice(bucket.index, bucket.index + Math.min(distribution.to.instances.length, bucket.majoritySize))
             this.bucket = bucket
             this.future = future
             this.distribution = distribution
@@ -58,9 +58,10 @@ class Bucket {
         }
 
         distribution (distribution, future) {
-            if (distribution.to.length > distribution.from.length) {
+            if (distribution.to.majority.length > distribution.from.majority.length) {
                 return new Bucket.Expand(this.bucket, distribution, future)
             }
+            return new Bucket.Migrate(this.bucket, distribution, future)
         }
     }
 
@@ -69,8 +70,8 @@ class Bucket {
             this.bucket = bucket
             this.distribution = distribution
             this.future = future
-            const instances = distribution.instances.concat(distribution.instances)
-            this.right = this.left = instances.slice(bucket.index, bucket.index + Math.min(distribution.instances.length, bucket.majoritySize))
+            const instances = distribution.to.instances.concat(distribution.to.instances)
+            this.right = this.left = instances.slice(bucket.index, bucket.index + Math.min(distribution.to.instances.length, bucket.majoritySize))
             // Until the instance count grows to double the majority size, we
             // will have some overlap.
             const combined = this.left.concat(this.right)
