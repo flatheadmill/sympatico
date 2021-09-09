@@ -1,3 +1,195 @@
+## Thu Sep  9 13:52:22 CDT 2021
+
+Everyone running at once is too hard to fathom. I don't see how blocking all
+traffic everywhere doesn't cause problems. It seems like it is going to be
+harder to model and unit test. Finally, if a departure means we rebalance when
+we recover and ignore the previous balancing instructions we don't have to worry
+about losing the leader.
+
+## Thu Sep  9 01:20:20 CDT 2021
+
+Occurs to me that pause should be universal. We can simplify all the actions if
+we pause the bucket two-phase commit, then set the new government as the last
+action in phaser's queue. We use the external Paxos to control this.
+
+Expand is as follows.
+
+ * Send a message to pause the phaser, all messages are queued in an queue
+ external to the phaser so they are not promised.
+ * Send a message to expand the phaser to include the new majority. The new
+ government is added to the end of the internal queue. When it completes we
+ notify that we've completed this is barier, a successful expansion.
+ * If we have a departure of a member before the successful expansion message,
+ we fall back to initial majority less the departed member. If it is after a
+ successful expansion we fall back to the subsequent majority less the departed
+ member.
+ * When we get a successful expansion message we send a message to the new
+ leader to usurp and shrink to the new majority.
+ * Send a message to resume the queue for the phaser at the new and old
+ locations. The old location will reroute to the new location.
+
+Split is as follows.
+
+ * Send a message to pause the phaser, use external queue.
+ * Send the new expanded majority, it adds the new government to the end.
+ * Send a message when we've successfully expanded.
+ * If we have a departure of a member before the successful expansion message,
+ we fall back to initial majority less the departed member. If it is after a
+ successful expansion we fall back to the subsequent majorities of both less the
+ departed member. If we did successfully expand we must resume both... huh.
+ * When we get a successful expansion message we send a message to both phasers
+ to ....
+
+Yoiks. Okay. Well, we should just use our expand as it exists and exercise
+usurp, but if we are splitting we are moving to a new bucket, so the addresses
+for the majority are `{ machine, bucket }` and we include the foreign buckets.
+Then when we are ready to complete the split, we just usurp using the same
+bucket so we don't stomp on anything. We can use our same growth logic, which is
+good because it will be easier to explain to the user, create an simpler user
+interface.
+
+ * And so we send a message where both phasers usurp with the new majorities.
+ * We send a message to resume the phasers. When we do this we update our
+ routing table to say that yes, this guys are ready to take messages.
+
+Departure is as follows.
+
+ * Departure runs in a different queue, a short term queue and it blocks all
+ other operations, we don't allow ourselves to process Paxos messages. Okay,
+ well, we need a subsquent Paxos message to okay the new table, so everyone
+ pauses on departure, does the updates where they usurp and then submits a
+ message to incdicate the usurp was successful. Any messages regarding an
+ expansion, rebalance or split begun before the departure are now ignored.
+ * We go through all the buckets and generate new governments with the dead
+ machine removed. Based on whether or not it successfully transitioned if in the
+ middle of a transition. We'll only update majorities that have the machine.
+ * Every bucket that needs an update is paused if not already paused.
+ * The phaser will now ignore responses from dead machines, we'll have a dead
+ machine set, and we'll add to it when we push the departure government.
+ * Now we can put the new majority at the end, it will drain. If the leader died
+ we do an usurp that will resolve the last saved message.
+ * We send a message indicating that we've usurped all the necessary buckets.
+ * We count down the usurp messages and when they reach the participant count we
+ resume the paused queues possibly rerouting.
+
+Bonus if we can keep the buckets uneffected by the departure running while we do
+this.
+
+If we have a spare machine we could just use it and usurp from it as necessary.
+That would just take the first spare machine and have it usurp, running the
+following recovery step immediately.
+
+Recovery is as follows.
+
+Well, I don't have this in my head. We would just expand all the truncated
+bucekts to include the new entry. It would be in the same place in the arrival
+array, so we might have a map that maps from one machine to the next. But, that
+machine could fail, so we would have to make this an indefinate proces of sets
+of dead machines and maps of old machines to new machines. Unlike the departure,
+we should do this one slowly, one at a time.
+
+But, key to recovery working without losing messages is that it would abdicate
+instead of usurp.
+
+Then once we recover we should use our buckets as they are and rebalance, rather
+than trying to resume the old rebalance. If we are in the middle of a split,
+then we can also detect that rather easily and continue the split.
+
+Ordered shutdown is a matter of having spare machines and expanding to include
+the machine. This requires some sort of replacement map.
+
+Actually, if we do it this way, where we pause the queue, we can probably do all
+the balance and such at once. We did it one at a time because we go from three
+to six participants doubling the load across the board, but here we are only
+going from three to six for as long as it takes to takes to run the new
+majority. This means that the expanded barrier has to be across all machines
+though. Arrival changes layout? Everyone pause. Everyone expand. Everyone
+expanded? Everyone usurp.
+
+Yeah, and we might have to double, double, double, rebalance at the beginning,
+but eventually the worst will be double, rebalance. We're going to count on
+Paxos running relately quickly, then we can resume.
+
+## Sun Aug 29 16:15:53 CDT 2021
+
+Although I can see the transformation of the tables and the buckets in my head,
+I'm not able to see how to implement them.
+
+Let's say we move a bucket from one instance to another. The half-Paxos will
+expand the government to include the new members of the government. Then it can
+either abdicate, write a new government with a new leader, or it can be usurped,
+in that the new leader can propose a new government and take over. This is
+something I thought about a lot. It would be easier to control the transition
+from a single instance, rather than have one instance initiate the expansion and
+another instnace take over and usurp.
+
+Then I realized that after the new leader takes charge, it is the only one
+capable of pruning the old members, so the control does have to transfer from
+one instance to another.
+
+This is difficult. Who is really in control? Do we have the two instances
+colaborate, or do we have the leader do coordination.
+
+Now, we have decided we want to do these trasitions one at a time so that we do
+not double the load on the system with a bunch of musical chairs. So if the
+leader dies and a new one takes over, how does it know where we left off?
+
+My thinking on these matters is seriously muddled at the moment. In the end it
+will be a complicated system, logical if you look at it in its component parts.
+
+Since we are using the Paxos atomic log to coordinate, everyone can maintain a
+model of the redistribution process. The model can be issuing orders and the
+leader can be the one to enqueue those orders. Therefore the model needs to
+issue these orders synchronously. We can't pump into a Queue and read the queue
+synchronously. Feed the model a message. It has a synchronous queue of outgoing
+messages and when you're done feeding you shift that queue. If you are the
+leader then you enqueue. You count on islander and whatnot to ensure that this
+message gets forwarded.
+
+But there is still loss. A race for a leader crash. Everyone reads the message
+and drops it except the leader who enqueues it and then crashes. Now we are
+stuck because the new leader is never going to get the done message that clears
+the message from the stop of the queue.
+
+We need a special queue that will keep the top message. If we see a new
+government we replay the stop message. We only ever repeat the top message. It
+has a series number and we ignore duplicate messages.
+
+Now, as for the coordination.
+
+We now have a machine that says how we are supposed to transform and rather than
+having the maching itself call our half-Paxos, we will pull messages out of the
+machine and use Paxos to distribute the messages. This is the right thing to do
+and thinking otherwise is too much work, re-inventing our atomic log.
+
+That machine has a top message and that message can be repeated.
+
+That machine, as we iterate through it will have buckets that model the
+governmets as they should be. Currently I'm thinking of them as a model of what
+is running, but it is not. It is a model of a transformation. Rather than
+modeling the stages, bootstrapping, splitting, migrating, etc. It should create
+a series of commands. First bucket 2 expands to include bucket 18. Then bucket
+18 usurps. Then bucket 18 contracts.
+
+So, we do need a model of this transform because we may lose a participant and
+we need to know who the leader is. Do we fall backward or do we fall forward.
+
+We have two transofrmations split and migrate. If we fail in the middle of
+migrate we fall back or fall forward. It ought to be simple enough to know how
+to recover from a failed state. There is a switch that flips and we are either
+in the old bucket position or the new bucket position and recovery is recovery,
+extend then possibly usurp.
+
+For split, we send a message to abdicate half our kingdom. This is trickier.
+When do we stop forwarding messages, start forwarding messages. What if we fail
+but we are...
+
+Okay, so prior to doing a split we need to allow messages to back up outside of
+the internal promised queue and drain that queue. Then we don't have to worry
+about renumbering messages or forwarding them as part of half-Paxos. We might
+even enqueue a message with a callback, that is, we're going to reduce the
+complexity of half-Paxos, so maybe it can do more work.
+
 ## Sat Aug 14 06:23:13 CDT 2021
 
 Key are going to apply to submissions to this conensus algrithm, it needs to
