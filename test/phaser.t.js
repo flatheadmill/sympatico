@@ -1,7 +1,7 @@
 require('proof')(5, prove)
 
 function prove (okay) {
-    const Consensus = require('../redux')
+    const Consensus = require('../phaser')
     const nodes = (new Array(5).fill(null)).map((_, index) => new Consensus(index))
     const pulses = nodes.map(node => node.outbox.shifter().sync)
     const logs = nodes.map(node => node.log.shifter().sync)
