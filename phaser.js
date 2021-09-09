@@ -43,7 +43,7 @@ const Monotonic = require('paxos/monotonic')
 // the queue is a problem for the network implementation.
 
 //
-class Consensus extends events.EventEmitter {
+class Phaser extends events.EventEmitter {
     // The `address` locates another participant on the network.
 
     //
@@ -429,4 +429,4 @@ class Consensus extends events.EventEmitter {
     }
 }
 
-module.exports = Consensus
+module.exports = Phaser
