@@ -24,7 +24,7 @@
 require('proof')(1, async okay => {
     // ## Further Documentation
 
-    const Sympatico = require('../redux')
+    const Sympatico = require('../phaser')
     okay(Sympatico, 'require')
 })
 

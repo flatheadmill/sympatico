@@ -47,6 +47,6 @@ node --allow-natives-syntax test/readme/readme.t.js
 ## Further Documentation
 
 ```javascript
-const Sympatico = require('packet/redux')
+const Sympatico = require('packet/phaser')
 okay(Sympatico, 'require')
 ```
