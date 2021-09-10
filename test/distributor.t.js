@@ -5,15 +5,15 @@ require('proof')(5, okay => {
     {
         const distributor = new Distributor
         okay(distributor.ratio, 1, 'default ratio')
-        okay(distributor.maximum, Number.MAX_SAFE_INTEGER, 'default maximum')
+        okay(distributor.active, Number.MAX_SAFE_INTEGER, 'default active')
     }
 
-    const distributor = new Distributor({ maximum: 3, ratio: 4 })
+    const distributor = new Distributor({ active: 3, ratio: 4 })
 
     const shifter = distributor.distributions.shifter().sync
 
     okay(distributor.ratio, 4, 'constructor ratio')
-    okay(distributor.maximum, 3, 'constructor maximum')
+    okay(distributor.active, 3, 'constructor maximum')
 
     distributor.arrive('1/0')
 

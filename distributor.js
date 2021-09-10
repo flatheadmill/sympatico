@@ -8,23 +8,23 @@ const { Queue } = require('avenue')
 const RBTree = require('bintrees').RBTree
 
 class Distributor {
-    constructor ({ maximum = Number.MAX_SAFE_INTEGER, ratio = 1 } = {}) {
+    constructor ({ active = Number.MAX_SAFE_INTEGER, ratio = 1 } = {}) {
         this.distributions = new Queue
         this.arrivals = []
         this.instances = []
         this.departures = new Set
         this.distribution = { complete: true, to: [] }
-        this.configure({ maximum, ratio })
+        this.configure({ active, ratio })
     }
 
     configure (configuration) {
-        this.maximum = coalesce(configuration.maximum, this.maximum)
+        this.active = coalesce(configuration.active, this.active)
         this.ratio = coalesce(configuration.ratio, this.ratio)
     }
 
     arrive (promise) {
         this.arrivals.push(promise)
-        if (this.instances.length < this.maximum && this.distribution.complete) {
+        if (this.instances.length < this.active && this.distribution.complete) {
             this.instances.push(this.arrivals.shift())
             if (this.distribution.to.length == 0) {
                 this.distributions.push(this.distribution = {
