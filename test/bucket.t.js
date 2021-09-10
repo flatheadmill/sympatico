@@ -14,7 +14,7 @@ require('proof')(5, async okay => {
         })
         okay(shifter.shift(), {
             step: 0,
-            majority: [ '1/0' ]
+            majority: [{ promise: '1/0', index: 0 }]
         }, 'bootstrap')
         bucket.complete(0)
         await promise
@@ -27,18 +27,21 @@ require('proof')(5, async okay => {
             from: { instances: [ '1/0' ], majority: [ '1/0' ] },
             departed: []
         })
-        okay(shifter.shift(), {
+        okay(shifter.shift(), [{
             method: 'replicate',
-            majority: [ '1/0', '2/0' ]
-        }, 'replicate')
+            to: [{ promise: '1/0', index: 0 }],
+            majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
+        }], 'replicate')
         bucket.complete('replicate')
-        okay(shifter.shift(), {
+        okay(shifter.shift(), [{
             method: 'split',
-            majority: {
-                left: [ '1/0', '2/0' ],
-                right: [ '1/0', '2/0' ]
-            }
-        }, 'split')
+            to: { promise: '1/0', index: 0 },
+            majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
+        }, {
+            method: 'split',
+            to: { promise: '1/0', index: 1 },
+            majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
+        }], 'split')
         bucket.complete('split')
         await promise
     }

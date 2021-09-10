@@ -24,6 +24,7 @@ class Bucket {
             const instances = distribution.to.instances.concat(distribution.to.instances)
             this.step = 0
             this.majority = instances.slice(bucket.index, bucket.index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+                                     .map(promise => { return { promise, index: bucket.index } })
             this.bucket = bucket
             this.future = future
             this.distribution = distribution
@@ -71,24 +72,28 @@ class Bucket {
             this.distribution = distribution
             this.future = future
             const instances = distribution.to.instances.concat(distribution.to.instances)
-            this.right = this.left = instances.slice(bucket.index, bucket.index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+            const majority = instances.slice(bucket.index, bucket.index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+            this.left = majority.map(promise => { return { promise, index: bucket.index } })
+            this.right = majority.map(promise => { return { promise, index: bucket.index + distribution.from.majority.length } })
             // Until the instance count grows to double the majority size, we
             // will have some overlap.
             const combined = this.left.concat(this.right)
-            const majority = combined.filter((promise, index) => combined.indexOf(promise) == index)
-            this.bucket.events.push({ method: 'replicate', majority: majority })
+            //const majority = combined.filter((promise, index) => combined.indexOf(promise) == index)
+            this.bucket.events.push([{ method: 'replicate', majority: combined, to: [ combined[0] ] }])
         }
 
         complete (method) {
             switch (method) {
             case 'replicate': {
-                    this.bucket.events.push({
+                    this.bucket.events.push([{
                         method: 'split',
-                        majority: {
-                            left: this.left,
-                            right: this.right
-                        }
-                    })
+                        to: this.left[0],
+                        majority: this.left
+                    }, {
+                        method: 'split',
+                        to: this.right[0],
+                        majority: this.right
+                    }])
                     return this
                 }
             case 'split': {
