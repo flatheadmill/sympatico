@@ -17,6 +17,15 @@ class Bucket {
             assert.equal(distribution.departed.length, 0, 'bootstrapping on departure')
             return new Bucket.Bootstrap(this.bucket, distribution, future)
         }
+
+        receive (message) {
+            switch (message.method) {
+            case 'split': {
+                    // Would go to stable.
+                }
+                break
+            }
+        }
     }
 
     static Bootstrap  = class {
@@ -78,8 +87,29 @@ class Bucket {
             // Until the instance count grows to double the majority size, we
             // will have some overlap.
             const combined = this.left.concat(this.right)
-            //const majority = combined.filter((promise, index) => combined.indexOf(promise) == index)
+            this.state = 'replicating'
             this.bucket.events.push([{ method: 'replicate', majority: combined, to: [ combined[0] ] }])
+        }
+
+        depart (promise) {
+            if (this.left.some(address => address.promise == promise)) {
+                switch (this.state) {
+                case 'replicating': {
+                        return [{ method: 'depart', majority: this.left, to: this.left[0] }]
+                    }
+                    break
+                case 'splitting': {
+                        return [{ method: 'depart', majority: this.left, to: this.left[0] }]
+                    }
+                    break
+                }
+            }
+        }
+
+        request (message) {
+        }
+
+        response (message) {
         }
 
         complete (method) {
