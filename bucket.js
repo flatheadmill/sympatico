@@ -28,7 +28,21 @@ class Bucket {
         }
     }
 
-    static Bootstrap  = class {
+    static Departed = class {
+        constructor (bucket, majority, departed) {
+            this.bucket = bucket
+            this.departed = departed
+            this.majority = majority
+            this.bucket.events.push([{
+                method: 'departure',
+                to: majority[0],
+                majority: majority,
+                departed: departed
+            }])
+        }
+    }
+
+    static Bootstrap = class {
         constructor (bucket, distribution, future) {
             const instances = distribution.to.instances.concat(distribution.to.instances)
             this.step = 0
@@ -41,6 +55,14 @@ class Bucket {
                 step: this.step++,
                 majority: this.majority.slice(0, 1)
             })
+        }
+
+        depart (promise) {
+            const departed = this.majority.filter(address => address.promise != promise)
+            if (departed.length != this.majority.length) {
+                return new Departed(this.bucket, departed, [ promise ])
+            }
+            return this
         }
 
         complete (step) {
