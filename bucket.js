@@ -50,10 +50,25 @@ class Bucket {
                                      .map(promise => { return { promise, index: bucket.index } })
             this.bucket = bucket
             this.future = future
-            this.distribution = distribution
+            const promise = distribution.promise
             this.bucket.events.push({
-                step: this.step++,
-                majority: this.majority.slice(0, 1)
+                method: 'paxos',
+                request: [{
+                    method: 'bootstrap',
+                    promise: promise,
+                    to: this.majority[0],
+                    majority: this.majority.slice()
+                }].concat(this.majority.slice(1).map(address => {
+                    return {
+                        method: 'follow',
+                        promise: promise,
+                        to: this.majority[0],
+                        majority: this.majority.slice()
+                    }
+                })),
+                response: this.majority.map(address => {
+                    return { method: 'stabilize', promise: promise, to: address }
+                })
             })
         }
 
@@ -63,6 +78,16 @@ class Bucket {
                 return new Departed(this.bucket, departed, [ promise ])
             }
             return this
+        }
+
+        async request (message) {
+            assert.equal(message.method, 'bootstrap')
+            await this.bucket.appoint(message.promise, message.majority)
+            return this
+        }
+
+        response (message) {
+            return new Bucket.Stable(this.bucket, this.majority)
         }
 
         complete (step) {
@@ -85,8 +110,10 @@ class Bucket {
     }
 
     static Stable = class {
-        constructor (bucket) {
+        constructor (bucket, majority, departed = []) {
             this.bucket = bucket
+            this.majority = []
+            this.departed = departed
         }
 
         distribution (distribution, future) {
@@ -110,7 +137,28 @@ class Bucket {
             // will have some overlap.
             const combined = this.left.concat(this.right)
             this.state = 'replicating'
-            this.bucket.events.push([{ method: 'replicate', majority: combined, to: [ combined[0] ] }])
+            this.bucket.events.push({
+                method: 'paxos',
+                series: 0,
+                request: [{
+                    method: 'replicate', majority: combined, to: combined[0]
+                }].concat(combined.slice(1).map(address => {
+                    return {
+                        method: 'follow',
+                        to: address,
+                        majority: combined,
+                    }
+                })),
+                response: [{
+                    method: 'replicated', majority: combined, to: combined[0]
+                }].concat(combined.slice(1).map(address => {
+                    return {
+                        method: 'followed',
+                        to: address,
+                        majority: combined,
+                    }
+                }))
+            })
         }
 
         depart (promise) {
@@ -128,29 +176,62 @@ class Bucket {
             }
         }
 
-        request (message) {
+        async request (message) {
+            switch (message.method) {
+            case 'replicate': {
+                    await this.bucket.appoint(message.majority)
+                    return this
+                }
+            case 'appoint': {
+                    await this.bucket.appoint(message.majority)
+                    return this
+                }
+            }
         }
 
         response (message) {
-        }
-
-        complete (method) {
-            switch (method) {
-            case 'replicate': {
-                    this.bucket.events.push([{
-                        method: 'split',
+            switch (message.method) {
+            case 'replicated': {
+                    const left = [{
+                        method: 'expanded',
                         to: this.left[0],
                         majority: this.left
-                    }, {
-                        method: 'split',
+                    }].concat(this.left.slice(1).map(address => {
+                        return {
+                            method: 'following',
+                            to: address,
+                            majority: this.left
+                        }
+                    }))
+                    const right = [{
+                        method: 'expanded',
                         to: this.right[0],
                         majority: this.right
-                    }])
+                    }].concat(this.right.slice(1).map(address => {
+                        return {
+                            method: 'following',
+                            to: address,
+                            majority: this.right
+                        }
+                    }))
+                    this.bucket.events.push({
+                        method: 'paxos',
+                        series: 0,
+                        request: [{
+                            method: 'appoint',
+                            to: this.left[0],
+                            majority: this.left
+                        }, {
+                            method: 'appoint',
+                            to: this.right[0],
+                            majority: this.right
+                        }],
+                        response: left.concat(right)
+                    })
                     return this
                 }
-            case 'split': {
-                    this.future.resolve()
-                    return new Bucket.Stable(this.bucket)
+            case 'expanded': {
+                    return new Bucket.Stable(this.bucket, message.majority)
                 }
             }
         }
@@ -175,10 +256,19 @@ class Bucket {
         return this._strategy.majority
     }
 
+    appoint () {
+    }
+
     distribution (distribution) {
-        const future = new Future
-        this._strategy = this._strategy.distribution(distribution, future)
-        return future
+        this._strategy = this._strategy.distribution(distribution)
+    }
+
+    async request (message) {
+        this._strategy = await this._strategy.request(message)
+    }
+
+    response (message) {
+        this._strategy = this._strategy.response(message)
     }
 
     bootstrap (promise, majority) {
