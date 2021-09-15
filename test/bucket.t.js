@@ -1,4 +1,4 @@
-require('proof')(5, async okay => {
+require('proof')(6, async okay => {
     const Bucket = require('../bucket')
     {
         const bucket = new Bucket(0, 3)
@@ -39,47 +39,37 @@ require('proof')(5, async okay => {
                 from: { instances: [ '1/0' ], majority: [ '1/0' ] },
                 departed: []
             })
-            const dispatch = shifter.shift()
-            okay(dispatch, {
-                method: 'paxos',
-                series: 0,
-                request: [{
-                    method: 'replicate',
-                    to: { promise: '1/0', index: 0 },
-                    majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                }, {
-                    method: 'follow',
-                    to: { promise: '2/0', index: 0 },
-                    majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                }, {
-                    method: 'follow',
-                    to: { promise: '1/0', index: 1 },
-                    majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                }, {
-                    method: 'follow',
-                    to: { promise: '2/0', index: 1 },
-                    majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                }],
-                response: [{
-                    method: 'replicated',
-                    to: { promise: '1/0', index: 0 },
-                    majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                }, {
-                    method: 'followed',
-                    to: { promise: '2/0', index: 0 },
-                    majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                }, {
-                    method: 'followed',
-                    to: { promise: '1/0', index: 1 },
-                    majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                }, {
-                    method: 'followed',
-                    to: { promise: '2/0', index: 1 },
-                    majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                }]
-            }, 'replicated')
-            bucket.request(dispatch.request[0])
-            bucket.response(dispatch.response[0])
+            {
+                const dispatch = shifter.shift()
+                okay(dispatch, {
+                    method: 'paxos',
+                    series: 0,
+                    request: [{
+                        method: 'appoint',
+                        to: { promise: '1/0', index: 0 },
+                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
+                    }],
+                    response: [{
+                        method: 'replicated',
+                        to: { promise: '1/0', index: 0 },
+                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
+                    }, {
+                        method: 'following',
+                        to: { promise: '2/0', index: 0 },
+                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
+                    }, {
+                        method: 'following',
+                        to: { promise: '1/0', index: 1 },
+                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
+                    }, {
+                        method: 'following',
+                        to: { promise: '2/0', index: 1 },
+                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
+                    }]
+                }, 'replicated')
+                bucket.request(dispatch.request[0])
+                bucket.response(dispatch.response[0])
+            }
             {
                 const dispatch = shifter.shift()
                 okay(dispatch, {
@@ -115,6 +105,7 @@ require('proof')(5, async okay => {
                 bucket.request(dispatch.request[0])
                 bucket.response(dispatch.response[0])
             }
+            okay(shifter.shift(), null, 'expansion complete')
         }
     }
 })

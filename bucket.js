@@ -141,19 +141,13 @@ class Bucket {
                 method: 'paxos',
                 series: 0,
                 request: [{
-                    method: 'replicate', majority: combined, to: combined[0]
-                }].concat(combined.slice(1).map(address => {
-                    return {
-                        method: 'follow',
-                        to: address,
-                        majority: combined,
-                    }
-                })),
+                    method: 'appoint', majority: combined, to: combined[0]
+                }],
                 response: [{
                     method: 'replicated', majority: combined, to: combined[0]
                 }].concat(combined.slice(1).map(address => {
                     return {
-                        method: 'followed',
+                        method: 'following',
                         to: address,
                         majority: combined,
                     }
@@ -178,10 +172,6 @@ class Bucket {
 
         async request (message) {
             switch (message.method) {
-            case 'replicate': {
-                    await this.bucket.appoint(message.majority)
-                    return this
-                }
             case 'appoint': {
                     await this.bucket.appoint(message.majority)
                     return this
