@@ -43,7 +43,7 @@ class Bucket {
             this.majority = majority
             this.bucket.events.push([{
                 method: 'departure',
-                to: majority[0],
+                to: [ majority[0] ],
                 majority: majority,
                 departed: departed
             }])
@@ -64,18 +64,18 @@ class Bucket {
                 request: [{
                     method: 'bootstrap',
                     promise: promise,
-                    to: this.majority[0],
+                    to: [ this.majority[0] ],
                     majority: this.majority.slice()
                 }].concat(this.majority.slice(1).map(address => {
                     return {
                         method: 'follow',
                         promise: promise,
-                        to: this.majority[0],
+                        to: [ this.majority[0] ],
                         majority: this.majority.slice()
                     }
                 })),
                 response: this.majority.map(address => {
-                    return { method: 'stabilize', promise: promise, to: address }
+                    return { method: 'stabilize', promise: promise, to: [ address ] }
                 })
             })
         }
@@ -138,17 +138,13 @@ class Bucket {
                 method: 'paxos',
                 series: 0,
                 request: [{
-                    method: 'appoint', majority: combined, to: combined[0]
+                    method: 'appoint', majority: combined, to: [ combined[0] ]
                 }],
                 response: [{
-                    method: 'replicated', majority: combined, to: combined[0]
-                }].concat(combined.slice(1).map(address => {
-                    return {
-                        method: 'following',
-                        to: address,
-                        majority: combined,
-                    }
-                }))
+                    method: 'replicated', majority: combined, to: [ combined[0] ]
+                }, {
+                    method: 'following', to: combined.slice(1), majority: combined
+                }]
             })
         }
 
@@ -179,23 +175,23 @@ class Bucket {
             case 'replicated': {
                     const left = [{
                         method: 'expanded',
-                        to: this.left[0],
+                        to: [ this.left[0] ],
                         majority: this.left
                     }].concat(this.left.slice(1).map(address => {
                         return {
                             method: 'following',
-                            to: address,
+                            to: [ address ],
                             majority: this.left
                         }
                     }))
                     const right = [{
                         method: 'expanded',
-                        to: this.right[0],
+                        to: [ this.right[0] ],
                         majority: this.right
                     }].concat(this.right.slice(1).map(address => {
                         return {
                             method: 'following',
-                            to: address,
+                            to: [ address ],
                             majority: this.right
                         }
                     }))
@@ -204,11 +200,11 @@ class Bucket {
                         series: 0,
                         request: [{
                             method: 'appoint',
-                            to: this.left[0],
+                            to: [ this.left[0] ],
                             majority: this.left
                         }, {
                             method: 'appoint',
-                            to: this.right[0],
+                            to: [ this.right[0] ],
                             majority: this.right
                         }],
                         response: left.concat(right)
@@ -238,17 +234,17 @@ class Bucket {
                 series: 0,
                 request: [{
                     method: 'appoint',
-                    to: expanded[0],
+                    to: [ expanded[0] ],
                     majority: expanded
                 }],
                 response: [{
                     method: 'expanded',
-                    to: expanded[0],
+                    to: [ expanded[0] ],
                     majority: expanded
                 }].concat(combined.slice(1).map(address => {
                     return {
                         method: 'following',
-                        to: address,
+                        to: [ address ],
                         majority: expanded
                     }
                 }))
