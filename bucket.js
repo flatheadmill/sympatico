@@ -4,14 +4,6 @@ const { Queue } = require('avenue')
 
 const { Future } = require('perhaps')
 
-function depart (promise) {
-    const departed = this.majority.filter(address => address.promise != promise)
-    if (departed.length != this.majority.length) {
-        return new Departed(this.bucket, departed, [ promise ])
-    }
-    return this
-}
-
 function stabilize (bucket, message) {
     assert.equal(message.method, 'collapse', 'unexpected message')
     return new Bucket.Stable(bucket, message.majority)
@@ -42,16 +34,18 @@ class Bucket {
     }
 
     static Departed = class {
-        constructor (bucket, majority, departed) {
+        constructor (bucket, collapsed, departed) {
             this.bucket = bucket
             this.departed = departed
-            this.majority = majority
+            this.collapsed = collapsed
             this.bucket.events.push([{
                 method: 'departure',
                 to: [ majority[0] ],
-                majority: majority,
-                departed: departed
+                majority: collapsed
             }])
+        }
+
+        distribution (bucket, distribution) {
         }
     }
 
@@ -85,8 +79,6 @@ class Bucket {
                 })
             })
         }
-
-        depart = depart
 
         response (message) {
             return new Bucket.Stable(this.bucket, this.majority)
@@ -275,6 +267,14 @@ class Bucket {
 
     get majority () {
         return this._strategy.majority
+    }
+
+    depart (promise) {
+        const majority = this._strategy.collapsed
+        const departed = this._strategy.collapsed.filter(address => address.promise != promise)
+        if (departed.length != this.collapsed) {
+            this._strategy = new Bucket.Departed(this.bucket, departed, this._strategy.departed.concat(promise))
+        }
     }
 
     distribution (distribution) {
