@@ -4,6 +4,14 @@ const { Queue } = require('avenue')
 
 const { Future } = require('perhaps')
 
+function depart (promise) {
+    const departed = this.majority.filter(address => address.promise != promise)
+    if (departed.length != this.majority.length) {
+        return new Departed(this.bucket, departed, [ promise ])
+    }
+    return this
+}
+
 class Bucket {
     static Idle = class {
         constructor (bucket) {
@@ -18,10 +26,10 @@ class Bucket {
             return new Bucket.Bootstrap(this.bucket, distribution, future)
         }
 
-        receive (message) {
+        response (message) {
             switch (message.method) {
-            case 'split': {
-                    // Would go to stable.
+            case 'following': {
+                    return new Bucket.Stable(this.bucket, message.majority)
                 }
                 break
             }
@@ -72,13 +80,7 @@ class Bucket {
             })
         }
 
-        depart (promise) {
-            const departed = this.majority.filter(address => address.promise != promise)
-            if (departed.length != this.majority.length) {
-                return new Departed(this.bucket, departed, [ promise ])
-            }
-            return this
-        }
+        depart = depart
 
         async request (message) {
             assert.equal(message.method, 'bootstrap')
@@ -102,17 +104,10 @@ class Bucket {
         }
     }
 
-    static Join = class {
-        constructor (promise, majority) {
-            this.promise = promise
-            this.majority = majority
-        }
-    }
-
     static Stable = class {
-        constructor (bucket, majority, departed = []) {
+        constructor (bucket, collapsed, departed = []) {
             this.bucket = bucket
-            this.majority = []
+            this.collapsed = collapsed
             this.departed = departed
         }
 
@@ -120,7 +115,7 @@ class Bucket {
             if (distribution.to.majority.length > distribution.from.majority.length) {
                 return new Bucket.Expand(this.bucket, distribution, future)
             }
-            return new Bucket.Migrate(this.bucket, distribution, future)
+            return new Bucket.Migrate(this.bucket, this.collapsed, distribution)
         }
     }
 
@@ -133,6 +128,8 @@ class Bucket {
             const majority = instances.slice(bucket.index, bucket.index + Math.min(distribution.to.instances.length, bucket.majoritySize))
             this.left = majority.map(promise => { return { promise, index: bucket.index } })
             this.right = majority.map(promise => { return { promise, index: bucket.index + distribution.from.majority.length } })
+            // TODO Not right. Perpetuate existing majority.
+            this.collapsable = this.left
             // Until the instance count grows to double the majority size, we
             // will have some overlap.
             const combined = this.left.concat(this.right)
@@ -156,17 +153,15 @@ class Bucket {
         }
 
         depart (promise) {
-            if (this.left.some(address => address.promise == promise)) {
-                switch (this.state) {
-                case 'replicating': {
-                        return [{ method: 'depart', majority: this.left, to: this.left[0] }]
-                    }
-                    break
-                case 'splitting': {
-                        return [{ method: 'depart', majority: this.left, to: this.left[0] }]
-                    }
-                    break
-                }
+            const collapsed = this.collapsable.filter(address => address.promise != promise)
+            if (
+                collapsed.length != this.collapsable.length &&
+                collapsed[0].index == this.bucket.index
+            ) {
+                this.bucket.events.push({
+                    method: 'departure',
+                    majority: collapsed
+                })
             }
         }
 
@@ -224,6 +219,40 @@ class Bucket {
                     return new Bucket.Stable(this.bucket, message.majority)
                 }
             }
+        }
+    }
+
+    static Migrate = class {
+        constructor (bucket, collapsed, distribution) {
+            this.bucket = bucket
+            this.collapsed = collapsed
+            const from = collapsed.map(address => address.promise)
+            const instances = distribution.to.instances.concat(distribution.to.instances)
+            const index = instances.indexOf(distribution.to.majority[bucket.index])
+            const to = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+            const combined = from.concat(to)
+            const expanded = combined.filter((promise, index) => combined.indexOf(promise) == index)
+                                     .map(promise => { return { promise, index: bucket.index } })
+            this.bucket.events.push({
+                method: 'paxos',
+                series: 0,
+                request: [{
+                    method: 'appoint',
+                    to: expanded[0],
+                    majority: expanded
+                }],
+                response: [{
+                    method: 'expanded',
+                    to: expanded[0],
+                    majority: expanded
+                }].concat(combined.slice(1).map(address => {
+                    return {
+                        method: 'following',
+                        to: address,
+                        majority: expanded
+                    }
+                }))
+            })
         }
     }
 

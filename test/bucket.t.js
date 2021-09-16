@@ -31,7 +31,7 @@ require('proof')(6, async okay => {
             await bucket.request(dispatch.request[0])
             bucket.response(dispatch.response[0])
         }
-        // Expansion and redistribution.
+        // Expansion.
         {
             bucket.distribution({
                 promise: '2/0',
@@ -106,6 +106,15 @@ require('proof')(6, async okay => {
                 bucket.response(dispatch.response[0])
             }
             okay(shifter.shift(), null, 'expansion complete')
+        }
+        {
+            bucket.distribution({
+                promise: '3/0',
+                // TODO Rename `majority` to `leaders`.
+                from: { instances: [ '1/0', '2/0' ], majority: [ '1/0', '1/0' ] },
+                to: { instances: [ '1/0', '2/0' ], majority: [ '2/0', '1/0' ] },
+                departed: []
+            })
         }
     }
 })
