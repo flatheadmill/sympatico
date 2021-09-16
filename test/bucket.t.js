@@ -10,7 +10,7 @@ require('proof')(8, async okay => {
             bucket.distribution({
                 promise: '1/0',
                 from: { instances: [], buckets: [] },
-                to: { instances: [ '1/0' ], buckets: [ '1/0' ] },
+                to: { instances: [[ '1/0' ]], buckets: [ 0 ] },
                 departed: []
             })
             const dispatch = shifter.shift()
@@ -34,8 +34,8 @@ require('proof')(8, async okay => {
         {
             bucket.distribution({
                 promise: '2/0',
-                to: { instances: [ '1/0', '2/0' ], buckets: [ '1/0', '1/0' ] },
-                from: { instances: [ '1/0' ], buckets: [ '1/0' ] },
+                to: { instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 0, 0 ] },
+                from: { instances: [[ '1/0' ]], buckets: [ 0 ] },
                 departed: []
             })
             {
@@ -96,8 +96,8 @@ require('proof')(8, async okay => {
         {
             bucket.distribution({
                 promise: '3/0',
-                from: { instances: [ '1/0', '2/0' ], buckets: [ '1/0', '1/0' ] },
-                to: { instances: [ '1/0', '2/0' ], buckets: [ '2/0', '1/0' ] },
+                from: { instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 0, 0 ] },
+                to: { instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 1, 0 ] },
                 departed: []
             })
             {

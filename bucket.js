@@ -2,8 +2,6 @@ const assert = require('assert')
 
 const { Queue } = require('avenue')
 
-const { Future } = require('perhaps')
-
 function stabilize (bucket, message) {
     assert.equal(message.method, 'collapse', 'unexpected message')
     return new Bucket.Stable(bucket, message.majority)
@@ -50,14 +48,13 @@ class Bucket {
     }
 
     static Bootstrap = class {
-        constructor (bucket, distribution, future) {
+        constructor (bucket, distribution) {
             const instances = distribution.to.instances.concat(distribution.to.instances)
-            const index = instances.indexOf(distribution.to.buckets[bucket.index])
+            const index = distribution.to.buckets[bucket.index]
             this.step = 0
             this.majority = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
-                                     .map(promise => { return { promise, index: bucket.index } })
+                                     .map(promise => { return { promise: promise[0], index: bucket.index } })
             this.bucket = bucket
-            this.future = future
             const promise = distribution.promise
             this.bucket.events.push({
                 method: 'paxos',
@@ -117,10 +114,10 @@ class Bucket {
             this.distribution = distribution
             this.future = future
             const instances = distribution.to.instances.concat(distribution.to.instances)
-            const index = instances.indexOf(distribution.from.buckets[bucket.index])
+            const index = distribution.from.buckets[bucket.index]
             const majority = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
-            this.left = majority.map(promise => { return { promise, index: bucket.index } })
-            this.right = majority.map(promise => { return { promise, index: bucket.index + distribution.from.buckets.length } })
+            this.left = majority.map(promise => { return { promise: promise[0], index: bucket.index } })
+            this.right = majority.map(promise => { return { promise: promise[0], index: bucket.index + distribution.from.buckets.length } })
             // TODO Not right. Perpetuate existing majority.
             this.collapsable = this.left
             // Until the instance count grows to double the majority size, we
@@ -197,8 +194,9 @@ class Bucket {
             this.collapsed = collapsed
             const from = collapsed.map(address => address.promise)
             const instances = distribution.to.instances.concat(distribution.to.instances)
-            const index = instances.indexOf(distribution.to.buckets[bucket.index])
+            const index = distribution.to.buckets[bucket.index]
             const to = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+                                .map(instance => instance[0])
             const combined = from.concat(to)
             const expanded = combined.filter((promise, index) => combined.indexOf(promise) == index)
                                      .map(promise => { return { promise, index: bucket.index } })
