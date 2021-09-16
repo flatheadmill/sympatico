@@ -3,7 +3,7 @@ require('proof')(8, async okay => {
     {
         const bucket = new Bucket(0, 3)
         okay(bucket.promise, null, 'null bucket promise')
-        okay(bucket.majority, null, 'null bucket majority')
+        okay(bucket.majority, [], 'null bucket majority')
         const shifter = bucket.events.shifter().sync
         // Single element bootstrap.
         {

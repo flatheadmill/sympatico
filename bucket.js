@@ -8,29 +8,6 @@ function stabilize (bucket, message) {
 }
 
 class Bucket {
-    static Idle = class {
-        constructor (bucket) {
-            this.bucket = bucket
-            this.promise = null
-            this.majority = null
-            this.active = false
-        }
-
-        distribution (distribution, future) {
-            assert.equal(distribution.departed.length, 0, 'bootstrapping on departure')
-            return new Bucket.Bootstrap(this.bucket, distribution, future)
-        }
-
-        response (message) {
-            switch (message.method) {
-            case 'collapse': {
-                    return new Bucket.Stable(this.bucket, message.majority)
-                }
-                break
-            }
-        }
-    }
-
     static Departed = class {
         constructor (bucket, collapsed, departed) {
             this.bucket = bucket
@@ -101,7 +78,9 @@ class Bucket {
         }
 
         distribution (distribution, future) {
-            if (distribution.to.buckets.length > distribution.from.buckets.length) {
+            if (this.collapsed.length == 0) {
+                return new Bucket.Bootstrap(this.bucket, distribution)
+            } else if (distribution.to.buckets.length > distribution.from.buckets.length) {
                 return new Bucket.Expand(this.bucket, distribution, future)
             }
             return new Bucket.Migrate(this.bucket, this.collapsed, distribution)
@@ -252,7 +231,7 @@ class Bucket {
         this.index = index
         this.majoritySize = majoritySize
         this.events = new Queue
-        this._strategy = new Bucket.Idle(this)
+        this._strategy = new Bucket.Stable(this, [])
     }
 
     get active () {
@@ -260,11 +239,11 @@ class Bucket {
     }
 
     get promise () {
-        return this._strategy.promise
+        return this._strategy.promise || null
     }
 
     get majority () {
-        return this._strategy.majority
+        return this._strategy.collapsed
     }
 
     depart (promise) {
