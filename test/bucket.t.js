@@ -23,9 +23,10 @@ require('proof')(8, async okay => {
                     majority: [{ promise: '1/0', index: 0 }]
                 }],
                 response: [{
-                    method: 'stabilize',
+                    method: 'collapse',
                     promise: '1/0',
-                    to: [{ promise: '1/0', index: 0 }]
+                    to: [{ promise: '1/0', index: 0 }],
+                    majority: [{ promise: '1/0', index: 0 }]
                 }]
             }, 'bootstrap')
             bucket.response(dispatch.response[0])

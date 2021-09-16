@@ -40,33 +40,15 @@ class Bucket {
                     promise: promise,
                     to: [ this.majority[0] ],
                     majority: this.majority.slice()
-                }].concat(this.majority.slice(1).map(address => {
-                    return {
-                        method: 'follow',
-                        promise: promise,
-                        to: [ this.majority[0] ],
-                        majority: this.majority.slice()
-                    }
-                })),
+                }],
                 response: this.majority.map(address => {
-                    return { method: 'stabilize', promise: promise, to: [ address ] }
+                    return { method: 'collapse', promise: promise, to: this.majority, majority: this.majority }
                 })
             })
         }
 
         response (message) {
-            return new Bucket.Stable(this.bucket, this.majority)
-        }
-
-        complete (step) {
-            assert.equal(step + 1, this.step, 'step out of order')
-            if (this.step == this.majority.length) {
-                this.future.resolve()
-                return new Bucket.Stable(this.bucket)
-            }
-            const current = this.step++
-            this.bucket.events.push({ step: current, majority: this.majority.slice(0, this.step) })
-            return this
+            return stabilize(this.bucket, message)
         }
     }
 
