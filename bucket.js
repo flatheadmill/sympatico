@@ -25,6 +25,7 @@ class Bucket {
             this.bucket = bucket
             this.majority = majority
             this.departed = departed
+            this.stable = false
         }
 
         depart (promise) {
@@ -52,7 +53,6 @@ class Bucket {
     static Departed = class extends Bucket.Strategy {
         constructor (bucket, majority, departed) {
             super(bucket, majority, departed)
-            this.stable = false
         }
 
         distribution (distribution) {
@@ -105,7 +105,6 @@ class Bucket {
         constructor (bucket, majority, departed) {
             super(bucket, majority, departed)
             this.restoration = [{ promise: '0/0', index: 1 }]
-            this.stable = false
             this.bucket.events.push({
                 method: 'depart',
                 series: 0,
@@ -123,8 +122,9 @@ class Bucket {
         }
     }
 
-    static Bootstrap = class {
+    static Bootstrap = class extends Bucket.Strategy {
         constructor (bucket, distribution) {
+            super(bucket, [], [])
             const instances = distribution.to.instances.concat(distribution.to.instances)
             const index = distribution.to.buckets[bucket.index]
             this.step = 0
@@ -145,10 +145,6 @@ class Bucket {
                 })
             })
         }
-
-        response (message) {
-            return stabilize(this.bucket, message)
-        }
     }
 
     static Stable = class extends Bucket.Strategy {
@@ -161,21 +157,22 @@ class Bucket {
             if (this.majority.length == 0) {
                 return new Bucket.Bootstrap(this.bucket, distribution)
             } else if (distribution.to.buckets.length > distribution.from.buckets.length) {
-                return new Bucket.Expand(this.bucket, distribution)
+                return new Bucket.Expand(this.bucket, this.collapsed, distribution)
             }
             return new Bucket.Migrate(this.bucket, this.majority, distribution)
         }
     }
 
-    static Expand = class {
-        constructor (bucket, distribution) {
+    static Expand = class extends Bucket.Strategy {
+        constructor (bucket, majority, distribution) {
+            super(bucket, majority, [])
             this.bucket = bucket
             this.distribution = distribution
             const instances = distribution.to.instances.concat(distribution.to.instances)
             const index = distribution.from.buckets[bucket.index]
-            const majority = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
-            this.left = majority.map(promise => { return { promise: promise[0], index: bucket.index } })
-            this.right = majority.map(promise => { return { promise: promise[0], index: bucket.index + distribution.from.buckets.length } })
+            const participants = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+            this.left = participants.map(promise => { return { promise: promise[0], index: bucket.index } })
+            this.right = participants.map(promise => { return { promise: promise[0], index: bucket.index + distribution.from.buckets.length } })
             // TODO Not right. Perpetuate existing majority.
             this.collapsable = this.left
             // Until the instance count grows to double the majority size, we
@@ -227,16 +224,15 @@ class Bucket {
                     return this
                 }
             default: {
-                    return stabilize(this.bucket, message)
+                    return super.response(message)
                 }
             }
         }
     }
 
-    static Migrate = class {
+    static Migrate = class extends Bucket.Strategy {
         constructor (bucket, majority, distribution) {
-            this.bucket = bucket
-            this.majority = majority
+            super(bucket, majority, distribution)
             const from = majority.map(address => address.promise)
             const instances = distribution.to.instances.concat(distribution.to.instances)
             const index = distribution.to.buckets[bucket.index]
@@ -287,7 +283,7 @@ class Bucket {
                     return this
                 }
             default: {
-                    return stabilize(this.bucket, message)
+                    return super.response(message)
                 }
             }
         }
@@ -305,10 +301,6 @@ class Bucket {
         return this._strategy.stable
     }
 
-    get active () {
-        return this._strategy.active
-    }
-
     get majority () {
         return this._strategy.majority
     }
@@ -317,28 +309,12 @@ class Bucket {
         this._strategy = this._strategy.depart(promise)
     }
 
-    restore (instances) {
-        this._strategy = this._strategy.restore(instances)
-    }
-
     distribution (distribution) {
         this._strategy = this._strategy.distribution(distribution)
     }
 
     response (message) {
         this._strategy = this._strategy.response(message)
-    }
-
-    bootstrap (promise, majority) {
-        return this._strategy = new Bucket.Bootstrap(this, promise, majority)
-    }
-
-    complete (step) {
-        this._strategy = this._strategy.complete(step)
-    }
-
-    expand (majority) {
-        assert.equal(majority.filter(address => ~this.majority.indexOf(address)).length, this.majority.length)
     }
 }
 

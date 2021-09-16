@@ -1,4 +1,4 @@
-require('proof')(7, async okay => {
+require('proof')(12, async okay => {
     const Bucket = require('../bucket')
     {
         const bucket = new Bucket('1/0', 0, 3)
