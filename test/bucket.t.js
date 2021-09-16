@@ -1,4 +1,4 @@
-require('proof')(6, async okay => {
+require('proof')(8, async okay => {
     const Bucket = require('../bucket')
     {
         const bucket = new Bucket(0, 3)
@@ -9,8 +9,8 @@ require('proof')(6, async okay => {
         {
             bucket.distribution({
                 promise: '1/0',
-                from: { instances: [], majority: [] },
-                to: { instances: [ '1/0' ], majority: [ '1/0' ] },
+                from: { instances: [], buckets: [] },
+                to: { instances: [ '1/0' ], buckets: [ '1/0' ] },
                 departed: []
             })
             const dispatch = shifter.shift()
@@ -35,8 +35,8 @@ require('proof')(6, async okay => {
         {
             bucket.distribution({
                 promise: '2/0',
-                to: { instances: [ '1/0', '2/0' ], majority: [ '1/0', '1/0' ] },
-                from: { instances: [ '1/0' ], majority: [ '1/0' ] },
+                to: { instances: [ '1/0', '2/0' ], buckets: [ '1/0', '1/0' ] },
+                from: { instances: [ '1/0' ], buckets: [ '1/0' ] },
                 departed: []
             })
             {
@@ -99,14 +99,57 @@ require('proof')(6, async okay => {
             }
             okay(shifter.shift(), null, 'expansion complete')
         }
+        // Redistribution.
         {
             bucket.distribution({
                 promise: '3/0',
-                // TODO Rename `majority` to `leaders`.
-                from: { instances: [ '1/0', '2/0' ], majority: [ '1/0', '1/0' ] },
-                to: { instances: [ '1/0', '2/0' ], majority: [ '2/0', '1/0' ] },
+                from: { instances: [ '1/0', '2/0' ], buckets: [ '1/0', '1/0' ] },
+                to: { instances: [ '1/0', '2/0' ], buckets: [ '2/0', '1/0' ] },
                 departed: []
             })
+            {
+                const dispatch = shifter.shift()
+                okay(dispatch, {
+                    method: 'paxos',
+                    series: 0,
+                    request: [{
+                        method: 'appoint',
+                        to: [{ promise: '1/0', index: 0 }],
+                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
+                    }],
+                    response: [{
+                        method: 'expanded',
+                        to: [{ promise: '1/0', index: 0 }],
+                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
+                    }, {
+                        method: 'following',
+                        to: [{ promise: '2/0', index: 0 }],
+                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
+                    }]
+                }, 'expand')
+                bucket.response(dispatch.response[0])
+            }
+            {
+                const dispatch = shifter.shift()
+                okay(dispatch, {
+                    method: 'paxos',
+                    series: 0,
+                    request: [{
+                        method: 'appoint',
+                        to: [{ promise: '2/0', index: 0 }],
+                        majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
+                    }],
+                    response: [{
+                        method: 'migrated',
+                        to: [{ promise: '2/0', index: 0 }],
+                        majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
+                    }, {
+                        method: 'following',
+                        to: [{ promise: '1/0', index: 0 }],
+                        majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
+                    }]
+                }, 'expand')
+            }
         }
     }
 })

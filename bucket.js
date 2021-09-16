@@ -53,8 +53,9 @@ class Bucket {
     static Bootstrap = class {
         constructor (bucket, distribution, future) {
             const instances = distribution.to.instances.concat(distribution.to.instances)
+            const index = instances.indexOf(distribution.to.buckets[bucket.index])
             this.step = 0
-            this.majority = instances.slice(bucket.index, bucket.index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+            this.majority = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
                                      .map(promise => { return { promise, index: bucket.index } })
             this.bucket = bucket
             this.future = future
@@ -112,7 +113,7 @@ class Bucket {
         }
 
         distribution (distribution, future) {
-            if (distribution.to.majority.length > distribution.from.majority.length) {
+            if (distribution.to.buckets.length > distribution.from.buckets.length) {
                 return new Bucket.Expand(this.bucket, distribution, future)
             }
             return new Bucket.Migrate(this.bucket, this.collapsed, distribution)
@@ -125,9 +126,10 @@ class Bucket {
             this.distribution = distribution
             this.future = future
             const instances = distribution.to.instances.concat(distribution.to.instances)
-            const majority = instances.slice(bucket.index, bucket.index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+            const index = instances.indexOf(distribution.from.buckets[bucket.index])
+            const majority = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
             this.left = majority.map(promise => { return { promise, index: bucket.index } })
-            this.right = majority.map(promise => { return { promise, index: bucket.index + distribution.from.majority.length } })
+            this.right = majority.map(promise => { return { promise, index: bucket.index + distribution.from.buckets.length } })
             // TODO Not right. Perpetuate existing majority.
             this.collapsable = this.left
             // Until the instance count grows to double the majority size, we
@@ -224,11 +226,12 @@ class Bucket {
             this.collapsed = collapsed
             const from = collapsed.map(address => address.promise)
             const instances = distribution.to.instances.concat(distribution.to.instances)
-            const index = instances.indexOf(distribution.to.majority[bucket.index])
+            const index = instances.indexOf(distribution.to.buckets[bucket.index])
             const to = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
             const combined = from.concat(to)
             const expanded = combined.filter((promise, index) => combined.indexOf(promise) == index)
                                      .map(promise => { return { promise, index: bucket.index } })
+            this.to = to.map(promise => { return { promise, index: bucket.index } })
             this.bucket.events.push({
                 method: 'paxos',
                 series: 0,
@@ -241,14 +244,42 @@ class Bucket {
                     method: 'expanded',
                     to: [ expanded[0] ],
                     majority: expanded
-                }].concat(combined.slice(1).map(address => {
-                    return {
-                        method: 'following',
-                        to: [ address ],
-                        majority: expanded
-                    }
-                }))
+                }, {
+                    method: 'following',
+                    to: expanded.slice(1),
+                    majority: expanded
+                }]
             })
+        }
+
+        response (message) {
+            switch (message.method) {
+            case 'expanded': {
+                    this.collapsed = this.to
+                    this.bucket.events.push({
+                        method: 'paxos',
+                        series: 0,
+                        request: [{
+                            method: 'appoint',
+                            to: [ this.to[0] ],
+                            majority: this.to
+                        }],
+                        response: [{
+                            method: 'migrated',
+                            to: [ this.to[0] ],
+                            majority: this.to
+                        }, {
+                            method: 'following',
+                            to: this.to.slice(1),
+                            majority: this.to
+                        }]
+                    })
+                    return this
+                }
+            case 'migrated': {
+                    return new Bucket.Stable(this.bucket, this.collapsed)
+                }
+            }
         }
     }
 
