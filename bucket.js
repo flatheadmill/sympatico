@@ -3,7 +3,7 @@ const assert = require('assert')
 const { Queue } = require('avenue')
 
 function stabilize (bucket, message) {
-    assert.equal(message.method, 'collapse', 'unexpected message')
+    assert.equal(message.method, 'majority', 'unexpected message')
     return new Bucket.Stable(bucket, message.majority)
 }
 
@@ -45,7 +45,7 @@ class Bucket {
         }
 
         response (message) {
-            assert.equal(message.method, 'collapse', 'unexpected message')
+            assert.equal(message.method, 'majority', 'unexpected message')
             return new Bucket.Stable(this.bucket, message.majority)
         }
     }
@@ -53,6 +53,7 @@ class Bucket {
     static Departed = class extends Bucket.Strategy {
         constructor (bucket, majority, departed) {
             super(bucket, majority, departed)
+            this.restoration = [{ promise: '0/0', index: 0 }]
         }
 
         distribution (distribution) {
@@ -79,7 +80,7 @@ class Bucket {
                         majority: deduped
                     }],
                     response: [{
-                        method: 'collapse',
+                        method: 'majority',
                         to: deduped,
                         majority: majority
                     }]
@@ -90,7 +91,7 @@ class Bucket {
 
         response (message) {
             switch (message.method) {
-            case 'collapse': {
+            case 'majority': {
                     if (Bucket.equal(this.restoration, message.majority)) {
                         return new Bucket.Stable(this.bucket, message.majority)
                     }
@@ -114,7 +115,7 @@ class Bucket {
                     majority: majority
                 }],
                 response: [{
-                    method: 'collapse',
+                    method: 'majority',
                     to: majority.slice(1),
                     majority: majority
                 }]
@@ -141,7 +142,7 @@ class Bucket {
                     majority: this.majority.slice()
                 }],
                 response: this.majority.map(address => {
-                    return { method: 'collapse', promise: promise, to: this.majority, majority: this.majority }
+                    return { method: 'majority', promise: promise, to: this.majority, majority: this.majority }
                 })
             })
         }
@@ -157,7 +158,7 @@ class Bucket {
             if (this.majority.length == 0) {
                 return new Bucket.Bootstrap(this.bucket, distribution)
             } else if (distribution.to.buckets.length > distribution.from.buckets.length) {
-                return new Bucket.Expand(this.bucket, this.collapsed, distribution)
+                return new Bucket.Expand(this.bucket, this.majority, distribution)
             }
             return new Bucket.Migrate(this.bucket, this.majority, distribution)
         }
@@ -188,9 +189,9 @@ class Bucket {
                 response: [{
                     method: 'replicated', majority: combined, to: [ combined[0] ]
                 }, {
-                    method: 'collapse', to: this.left.slice(1), majority: this.left
+                    method: 'majority', to: this.left.slice(1), majority: this.left
                 }, {
-                    method: 'collapse', to: this.right, majority: this.right
+                    method: 'majority', to: this.right, majority: this.right
                 }]
             })
         }
@@ -212,11 +213,11 @@ class Bucket {
                             majority: this.right
                         }],
                         response: [{
-                            method: 'collapse',
+                            method: 'majority',
                             to: [ this.left[0] ],
                             majority: this.left
                         }, {
-                            method: 'collapse',
+                            method: 'majority',
                             to: [ this.right[0] ],
                             majority: this.right
                         }]
@@ -255,7 +256,7 @@ class Bucket {
                     to: [ expanded[0] ],
                     majority: expanded
                 }, {
-                    method: 'collapse',
+                    method: 'majority',
                     to: expanded.slice(1),
                     majority: this.to
                 }]
@@ -275,7 +276,7 @@ class Bucket {
                             majority: this.to
                         }],
                         response: [{
-                            method: 'collapse',
+                            method: 'majority',
                             to: this.to,
                             majority: this.to
                         }]

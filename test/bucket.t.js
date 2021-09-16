@@ -22,7 +22,7 @@ require('proof')(12, async okay => {
                     majority: [{ promise: '1/0', index: 0 }]
                 }],
                 response: [{
-                    method: 'collapse',
+                    method: 'majority',
                     promise: '1/0',
                     to: [{ promise: '1/0', index: 0 }],
                     majority: [{ promise: '1/0', index: 0 }]
@@ -53,11 +53,11 @@ require('proof')(12, async okay => {
                         to: [{ promise: '1/0', index: 0 }],
                         majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
                     }, {
-                        method: 'collapse',
+                        method: 'majority',
                         to: [{ promise: '2/0', index: 0 }],
                         majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
                     }, {
-                        method: 'collapse',
+                        method: 'majority',
                         to: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }],
                         majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
                     }]
@@ -79,11 +79,11 @@ require('proof')(12, async okay => {
                         majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
                     }],
                     response: [{
-                        method: 'collapse',
+                        method: 'majority',
                         to: [{ promise: '1/0', index: 0 }],
                         majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
                     }, {
-                        method: 'collapse',
+                        method: 'majority',
                         to: [{ promise: '1/0', index: 1 }],
                         majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
                     }]
@@ -115,7 +115,7 @@ require('proof')(12, async okay => {
                         to: [{ promise: '1/0', index: 0 }],
                         majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
                     }, {
-                        method: 'collapse',
+                        method: 'majority',
                         to: [{ promise: '2/0', index: 0 }],
                         majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
                     }]
@@ -133,7 +133,7 @@ require('proof')(12, async okay => {
                         majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
                     }],
                     response: [{
-                        method: 'collapse',
+                        method: 'majority',
                         to: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }],
                         majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
                     }]
@@ -154,7 +154,7 @@ require('proof')(12, async okay => {
                     majority: [{ promise: '1/0', index: 0 }]
                 }],
                 response: [{
-                    method: 'collapse',
+                    method: 'majority',
                     to: [],
                     majority: [{ promise: '1/0', index: 0 }]
                 }]
@@ -177,7 +177,7 @@ require('proof')(12, async okay => {
                     majority: [{ promise: '1/0', index: 0 }, { promise: '3/0', index: 0 }]
                 }],
                 response: [{
-                    method: 'collapse',
+                    method: 'majority',
                     to: [{ promise: '1/0', index: 0 }, { promise: '3/0', index: 0 }],
                     majority: [{ promise: '3/0', index: 0 }, { promise: '1/0', index: 0 }]
                 }]
@@ -190,7 +190,7 @@ require('proof')(12, async okay => {
         const bucket = new Bucket('2/0', 1, 3)
         const shifter = bucket.events.shifter().sync
         bucket.response({
-            method: 'collapse',
+            method: 'majority',
             to: [{ promise: '2/0', index: 0 }],
             majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
         })
