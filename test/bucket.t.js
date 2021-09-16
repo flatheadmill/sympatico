@@ -28,7 +28,6 @@ require('proof')(8, async okay => {
                     to: [{ promise: '1/0', index: 0 }]
                 }]
             }, 'bootstrap')
-            await bucket.request(dispatch.request[0])
             bucket.response(dispatch.response[0])
         }
         // Expansion.
@@ -54,12 +53,15 @@ require('proof')(8, async okay => {
                         to: [{ promise: '1/0', index: 0 }],
                         majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
                     }, {
-                        method: 'following',
-                        to: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }],
-                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
+                        method: 'collapse',
+                        to: [{ promise: '2/0', index: 0 }],
+                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
+                    }, {
+                        method: 'collapse',
+                        to: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }],
+                        majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
                     }]
                 }, 'replicated')
-                bucket.request(dispatch.request[0])
                 bucket.response(dispatch.response[0])
             }
             {
@@ -77,24 +79,15 @@ require('proof')(8, async okay => {
                         majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
                     }],
                     response: [{
-                        method: 'expanded',
+                        method: 'collapse',
                         to: [{ promise: '1/0', index: 0 }],
                         majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
                     }, {
-                        method: 'following',
-                        to: [{ promise: '2/0', index: 0 }],
-                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
-                    }, {
-                        method: 'expanded',
+                        method: 'collapse',
                         to: [{ promise: '1/0', index: 1 }],
-                        majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                    }, {
-                        method: 'following',
-                        to: [{ promise: '2/0', index: 1 }],
                         majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
                     }]
                 }, 'expanded')
-                bucket.request(dispatch.request[0])
                 bucket.response(dispatch.response[0])
             }
             okay(shifter.shift(), null, 'expansion complete')
@@ -122,9 +115,9 @@ require('proof')(8, async okay => {
                         to: [{ promise: '1/0', index: 0 }],
                         majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
                     }, {
-                        method: 'following',
+                        method: 'collapse',
                         to: [{ promise: '2/0', index: 0 }],
-                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
+                        majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
                     }]
                 }, 'expand')
                 bucket.response(dispatch.response[0])
@@ -140,12 +133,8 @@ require('proof')(8, async okay => {
                         majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
                     }],
                     response: [{
-                        method: 'migrated',
+                        method: 'collapse',
                         to: [{ promise: '2/0', index: 0 }],
-                        majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
-                    }, {
-                        method: 'following',
-                        to: [{ promise: '1/0', index: 0 }],
                         majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
                     }]
                 }, 'expand')

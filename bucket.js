@@ -12,6 +12,11 @@ function depart (promise) {
     return this
 }
 
+function stabilize (bucket, message) {
+    assert.equal(message.method, 'collapse', 'unexpected message')
+    return new Bucket.Stable(bucket, message.majority)
+}
+
 class Bucket {
     static Idle = class {
         constructor (bucket) {
@@ -28,7 +33,7 @@ class Bucket {
 
         response (message) {
             switch (message.method) {
-            case 'following': {
+            case 'collapse': {
                     return new Bucket.Stable(this.bucket, message.majority)
                 }
                 break
@@ -82,12 +87,6 @@ class Bucket {
         }
 
         depart = depart
-
-        async request (message) {
-            assert.equal(message.method, 'bootstrap')
-            await this.bucket.appoint(message.promise, message.majority)
-            return this
-        }
 
         response (message) {
             return new Bucket.Stable(this.bucket, this.majority)
@@ -145,7 +144,9 @@ class Bucket {
                 response: [{
                     method: 'replicated', majority: combined, to: [ combined[0] ]
                 }, {
-                    method: 'following', to: combined.slice(1), majority: combined
+                    method: 'collapse', to: this.left.slice(1), majority: this.left
+                }, {
+                    method: 'collapse', to: this.right, majority: this.right
                 }]
             })
         }
@@ -163,40 +164,10 @@ class Bucket {
             }
         }
 
-        async request (message) {
-            switch (message.method) {
-            case 'appoint': {
-                    await this.bucket.appoint(message.majority)
-                    return this
-                }
-            }
-        }
-
         response (message) {
             switch (message.method) {
             case 'replicated': {
-                    const left = [{
-                        method: 'expanded',
-                        to: [ this.left[0] ],
-                        majority: this.left
-                    }].concat(this.left.slice(1).map(address => {
-                        return {
-                            method: 'following',
-                            to: [ address ],
-                            majority: this.left
-                        }
-                    }))
-                    const right = [{
-                        method: 'expanded',
-                        to: [ this.right[0] ],
-                        majority: this.right
-                    }].concat(this.right.slice(1).map(address => {
-                        return {
-                            method: 'following',
-                            to: [ address ],
-                            majority: this.right
-                        }
-                    }))
+                    this.collapse = this.left
                     this.bucket.events.push({
                         method: 'paxos',
                         series: 0,
@@ -209,12 +180,20 @@ class Bucket {
                             to: [ this.right[0] ],
                             majority: this.right
                         }],
-                        response: left.concat(right)
+                        response: [{
+                            method: 'collapse',
+                            to: [ this.left[0] ],
+                            majority: this.left
+                        }, {
+                            method: 'collapse',
+                            to: [ this.right[0] ],
+                            majority: this.right
+                        }]
                     })
                     return this
                 }
-            case 'expanded': {
-                    return new Bucket.Stable(this.bucket, message.majority)
+            default: {
+                    return stabilize(this.bucket, message)
                 }
             }
         }
@@ -245,9 +224,9 @@ class Bucket {
                     to: [ expanded[0] ],
                     majority: expanded
                 }, {
-                    method: 'following',
+                    method: 'collapse',
                     to: expanded.slice(1),
-                    majority: expanded
+                    majority: this.to
                 }]
             })
         }
@@ -265,19 +244,15 @@ class Bucket {
                             majority: this.to
                         }],
                         response: [{
-                            method: 'migrated',
+                            method: 'collapse',
                             to: [ this.to[0] ],
-                            majority: this.to
-                        }, {
-                            method: 'following',
-                            to: this.to.slice(1),
                             majority: this.to
                         }]
                     })
                     return this
                 }
             case 'migrated': {
-                    return new Bucket.Stable(this.bucket, this.collapsed)
+                    return stabilize(this.bucket, message)
                 }
             }
         }
@@ -302,15 +277,8 @@ class Bucket {
         return this._strategy.majority
     }
 
-    appoint () {
-    }
-
     distribution (distribution) {
         this._strategy = this._strategy.distribution(distribution)
-    }
-
-    async request (message) {
-        this._strategy = await this._strategy.request(message)
     }
 
     response (message) {
