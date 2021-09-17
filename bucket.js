@@ -2,11 +2,6 @@ const assert = require('assert')
 
 const { Queue } = require('avenue')
 
-function stabilize (bucket, message) {
-    assert.equal(message.method, 'majority', 'unexpected message')
-    return new Bucket.Stable(bucket, message.majority)
-}
-
 class Bucket {
     static equal (left, right) {
         if (left.length == right.length) {
@@ -37,10 +32,6 @@ class Bucket {
                 }
                 return new Bucket.Departed(this.bucket, reduced, departed)
             }
-            return this
-        }
-
-        restore (instances) {
             return this
         }
 
