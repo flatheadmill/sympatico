@@ -2,7 +2,7 @@ require('proof')(12, async okay => {
     const { Queue } = require('avenue')
     const Bucket = require('../bucket')
     {
-        const bucket = new Bucket(new Queue, '1/0', 0, 3)
+        const bucket = new Bucket([ 0 ], new Queue, '1/0', 0, 3)
         okay(bucket.majority, [], 'null bucket majority')
         const shifter = bucket.events.shifter().sync
         // Single element bootstrap.
@@ -186,7 +186,7 @@ require('proof')(12, async okay => {
         }
     }
     {
-        const bucket = new Bucket(new Queue, '2/0', 1, 3)
+        const bucket = new Bucket([ 0 ], new Queue, '2/0', 1, 3)
         const shifter = bucket.events.shifter().sync
         bucket.response({
             method: 'majority',

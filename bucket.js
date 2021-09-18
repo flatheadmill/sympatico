@@ -62,7 +62,7 @@ class Bucket {
                 })
                 this.bucket.events.push({
                     method: 'paxos',
-                    series: 0,
+                    series: this.bucket.series[0],
                     request: [{
                         method: 'appoint',
                         to: [ deduped[0] ],
@@ -97,7 +97,7 @@ class Bucket {
             this.restoration = [{ promise: '0/0', index: 1 }]
             this.bucket.events.push({
                 method: 'depart',
-                series: 0,
+                series: this.bucket.series[0],
                 request: [{
                     method: 'appoint',
                     to: [ majority[0] ],
@@ -170,7 +170,7 @@ class Bucket {
             this.state = 'replicating'
             this.bucket.events.push({
                 method: 'paxos',
-                series: 0,
+                series: this.bucket.series[0],
                 request: [{
                     method: 'appoint', majority: combined, to: [ combined[0] ]
                 }],
@@ -190,7 +190,7 @@ class Bucket {
                     this.collapse = this.left
                     this.bucket.events.push({
                         method: 'paxos',
-                        series: 0,
+                        series: this.bucket.series[0],
                         request: [{
                             method: 'appoint',
                             to: [ this.left[0] ],
@@ -233,7 +233,7 @@ class Bucket {
             this.to = to.map(promise => { return { promise, index: bucket.index } })
             this.bucket.events.push({
                 method: 'paxos',
-                series: 0,
+                series: this.bucket.series[0],
                 request: [{
                     method: 'appoint',
                     to: [ expanded[0] ],
@@ -257,7 +257,7 @@ class Bucket {
                     this.majority = this.to
                     this.bucket.events.push({
                         method: 'paxos',
-                        series: 0,
+                        series: this.bucket.series[0],
                         request: [{
                             method: 'appoint',
                             to: [ this.to[0] ],
@@ -278,7 +278,8 @@ class Bucket {
         }
     }
 
-    constructor (events, promise, index, majoritySize) {
+    constructor (series, events, promise, index, majoritySize) {
+        this.series = series
         this.promise = promise
         this.index = index
         this.majoritySize = majoritySize

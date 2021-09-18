@@ -14,6 +14,7 @@ class Distributor {
         this.arrivals = []
         this.instances = []
         this.departed = []
+        this.series = [ 0 ]
         this.distribution = { complete: true, to: [] }
         this.configure({ active, ratio })
         this.events = new Queue
@@ -43,7 +44,7 @@ class Distributor {
         // If we see the first promise we are bootstrapping.
         if (promise == '1/0') {
             this.instances.push([ this.arrivals.shift() ])
-            this.buckets = [ new Bucket(this.events, promise, 0, 3) ]
+            this.buckets = [ new Bucket(this.series, this.events, promise, 0, 3) ]
             this.buckets[0].distribution(this.distribution = {
                 from: { instances: [], buckets: [] },
                 to: { instances: [[ '1/0' ]], buckets: [ 0 ] },
