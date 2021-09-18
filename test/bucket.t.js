@@ -18,13 +18,11 @@ require('proof')(12, async okay => {
                 method: 'paxos',
                 request: [{
                     method: 'bootstrap',
-                    promise: '1/0',
                     to: [{ promise: '1/0', index: 0 }],
                     majority: [{ promise: '1/0', index: 0 }]
                 }],
                 response: [{
                     method: 'majority',
-                    promise: '1/0',
                     to: [{ promise: '1/0', index: 0 }],
                     majority: [{ promise: '1/0', index: 0 }]
                 }]

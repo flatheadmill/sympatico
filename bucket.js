@@ -126,12 +126,11 @@ class Bucket {
                 method: 'paxos',
                 request: [{
                     method: 'bootstrap',
-                    promise: promise,
                     to: [ this.majority[0] ],
                     majority: this.majority.slice()
                 }],
                 response: this.majority.map(address => {
-                    return { method: 'majority', promise: promise, to: this.majority, majority: this.majority }
+                    return { method: 'majority', to: this.majority, majority: this.majority }
                 })
             })
         }

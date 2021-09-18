@@ -13,14 +13,23 @@ class Distributor {
         this.distributions = new Queue
         this.arrivals = []
         this.instances = []
-        this.departures = new Set
+        this.departed = []
         this.distribution = { complete: true, to: [] }
         this.configure({ active, ratio })
+        this.events = new Queue
     }
 
     configure (configuration) {
         this.active = coalesce(configuration.active, this.active)
         this.ratio = coalesce(configuration.ratio, this.ratio)
+    }
+
+    snapshot () {
+        return {
+            arrivals: this.arrivals.slice(),
+            instances: this.instances.slice(),
+            departed: this.departed.slice()
+        }
     }
 
     join (snapshot) {
@@ -33,18 +42,14 @@ class Distributor {
         this.arrivals.push(promise)
         // If we see the first promise we are bootstrapping.
         if (promise == '1/0') {
-            this.instances.push(this.arrivals.shift())
-            if (this.distribution.to.length == 0) {
-                this.distributions.push(this.distribution = {
-                    promise: promise,
-                    complete: false,
-                    stablized: null,
-                    to: [ promise ],
-                    from: [],
-                    departed: []
-                })
-            } else {
-            }
+            this.instances.push([ this.arrivals.shift() ])
+            this.buckets = [ new Bucket(this.events, promise, 0, 3) ]
+            this.buckets[0].distribution(this.distribution = {
+                from: { instances: [], buckets: [] },
+                to: { instances: [[ '1/0' ]], buckets: [ 0 ] },
+                departed: []
+            })
+        } else {
         }
     }
 

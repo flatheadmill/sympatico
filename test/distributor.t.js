@@ -10,7 +10,7 @@ require('proof')(5, okay => {
 
     const distributor = new Distributor({ active: 3, ratio: 4 })
 
-    const shifter = distributor.distributions.shifter().sync
+    const shifter = distributor.events.shifter().sync
 
     okay(distributor.ratio, 4, 'constructor ratio')
     okay(distributor.active, 3, 'constructor maximum')
@@ -18,12 +18,17 @@ require('proof')(5, okay => {
     distributor.arrive('1/0')
 
     okay(shifter.shift(), {
-        promise: '1/0',
-        complete: false,
-        stablized: null,
-        to: [ '1/0' ],
-        from: [],
-        departed: []
+        method: 'paxos',
+        request: [{
+            method: 'bootstrap',
+            to: [{ promise: '1/0', index: 0 }],
+            majority: [{ promise: '1/0', index: 0 }],
+        }],
+        response: [{
+            method: 'majority',
+            to: [{ promise: '1/0', index: 0 }],
+            majority: [{ promise: '1/0', index: 0 }],
+        }]
     }, 'arrive')
 
     distributor.complete('1/0')
