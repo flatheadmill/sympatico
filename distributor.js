@@ -4,7 +4,8 @@ const { coalesce } = require('extant')
 // An async/await multiplexed event queue.
 const { Queue } = require('avenue')
 
-// Red-black tree for ordered maps.
+const Bucket = require('./bucket')
+
 const RBTree = require('bintrees').RBTree
 
 class Distributor {
@@ -22,9 +23,16 @@ class Distributor {
         this.ratio = coalesce(configuration.ratio, this.ratio)
     }
 
+    join (snapshot) {
+        this.arrivals = snapshot.arrivals
+        this.instances = snapshot.instances
+        this.departed = snapshot.departed
+    }
+
     arrive (promise) {
         this.arrivals.push(promise)
-        if (this.instances.length < this.active && this.distribution.complete) {
+        // If we see the first promise we are bootstrapping.
+        if (promise == '1/0') {
             this.instances.push(this.arrivals.shift())
             if (this.distribution.to.length == 0) {
                 this.distributions.push(this.distribution = {
