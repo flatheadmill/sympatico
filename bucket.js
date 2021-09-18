@@ -1,7 +1,5 @@
 const assert = require('assert')
 
-const { Queue } = require('avenue')
-
 class Bucket {
     static equal (left, right) {
         if (left.length == right.length) {
@@ -281,11 +279,11 @@ class Bucket {
         }
     }
 
-    constructor (promise, index, majoritySize) {
+    constructor (events, promise, index, majoritySize) {
         this.promise = promise
         this.index = index
         this.majoritySize = majoritySize
-        this.events = new Queue
+        this.events = events
         this._strategy = new Bucket.Stable(this, [])
     }
 
