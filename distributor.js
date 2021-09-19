@@ -10,7 +10,6 @@ const RBTree = require('bintrees').RBTree
 
 class Distributor {
     constructor ({ active = Number.MAX_SAFE_INTEGER, ratio = 1 } = {}) {
-        this.distributions = new Queue
         this.arrivals = []
         this.instances = []
         this.departed = []
@@ -39,18 +38,75 @@ class Distributor {
         this.departed = snapshot.departed
     }
 
-    arrive (promise) {
+    arrive (promise, leader) {
+        if (this.promise == null) {
+            this.promise = promise
+        }
+        if (this.promise == leader) {
+            this.leader = true
+        }
         this.arrivals.push(promise)
         // If we see the first promise we are bootstrapping.
         if (promise == '1/0') {
             this.instances.push([ this.arrivals.shift() ])
             this.buckets = [ new Bucket(this.series, this.events, promise, 0, 3) ]
+            this.stable = false
             this.buckets[0].distribution(this.distribution = {
                 from: { instances: [], buckets: [] },
                 to: { instances: [[ '1/0' ]], buckets: [ 0 ] },
                 departed: []
             })
         } else {
+        }
+    }
+
+    request (message) {
+        switch (message.method) {
+        case 'arrive': {
+                this.arrive(message.promise, message.leader)
+            }
+            break
+        case 'leader': {
+                this.leader == this.promise == message.leader
+            }
+            break
+        case 'paxos': {
+                for (const request of message.request) {
+                    for (const to of request.to) {
+                        if (to.promise == this.promise) {
+                            switch (request.method) {
+                            case 'appoint': {
+                                    console.log('>>>> here')
+                                }
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+            break
+        }
+    }
+
+    response (message) {
+        switch (message.method) {
+        case 'paxos': {
+                for (const response of message.response) {
+                    for (const to of response.to) {
+                        if (to.promise == this.promise) {
+                            this.buckets[to.index].response(response)
+                        }
+                    }
+                }
+            }
+            break
+        case 'advance': {
+                const index = message.index + 1
+                if (index > buckets.length) {
+                    this.stable = true
+                }
+            }
+            break
         }
     }
 

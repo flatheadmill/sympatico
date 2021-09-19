@@ -17,7 +17,7 @@ require('proof')(12, async okay => {
             okay(dispatch, {
                 method: 'paxos',
                 request: [{
-                    method: 'bootstrap',
+                    method: 'appoint',
                     to: [{ promise: '1/0', index: 0 }],
                     majority: [{ promise: '1/0', index: 0 }]
                 }],

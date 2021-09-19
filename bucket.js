@@ -125,7 +125,7 @@ class Bucket {
             this.bucket.events.push({
                 method: 'paxos',
                 request: [{
-                    method: 'bootstrap',
+                    method: 'appoint',
                     to: [ this.majority[0] ],
                     majority: this.majority.slice()
                 }],
@@ -138,7 +138,7 @@ class Bucket {
 
     static Stable = class extends Bucket.Strategy {
         constructor (bucket, majority, departed = []) {
-            super(bucket, majority, departed)
+            super(bucket, majority, [])
             this.stable = true
         }
 
