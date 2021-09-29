@@ -42,6 +42,7 @@ require('proof')(12, async okay => {
                 okay(dispatch, {
                     method: 'paxos',
                     series: 0,
+                    index: -1,
                     request: [{
                         method: 'appoint',
                         to: [{ promise: '1/0', index: 0 }],
@@ -60,7 +61,7 @@ require('proof')(12, async okay => {
                         to: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }],
                         majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
                     }]
-                }, 'replicated')
+                }, 'expand')
                 bucket.response(dispatch.response[0])
             }
             {
@@ -68,6 +69,7 @@ require('proof')(12, async okay => {
                 okay(dispatch, {
                     method: 'paxos',
                     series: 0,
+                    index: 1,
                     request: [{
                         method: 'appoint',
                         to: [{ promise: '1/0', index: 0 }],
@@ -104,6 +106,7 @@ require('proof')(12, async okay => {
                 okay(dispatch, {
                     method: 'paxos',
                     series: 0,
+                    index: -1,
                     request: [{
                         method: 'appoint',
                         to: [{ promise: '1/0', index: 0 }],
@@ -118,7 +121,7 @@ require('proof')(12, async okay => {
                         to: [{ promise: '2/0', index: 0 }],
                         majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
                     }]
-                }, 'expand')
+                }, 'migrate')
                 bucket.response(dispatch.response[0])
             }
             {
@@ -126,6 +129,7 @@ require('proof')(12, async okay => {
                 okay(dispatch, {
                     method: 'paxos',
                     series: 0,
+                    index: 1,
                     request: [{
                         method: 'appoint',
                         to: [{ promise: '2/0', index: 0 }],
@@ -136,7 +140,7 @@ require('proof')(12, async okay => {
                         to: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }],
                         majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
                     }]
-                }, 'expanded')
+                }, 'migrated')
                 bucket.response(dispatch.response[0])
             }
         }
@@ -147,6 +151,7 @@ require('proof')(12, async okay => {
             okay(dispatch, {
                 method: 'depart',
                 series: 0,
+                index: 0,
                 request: [{
                     method: 'appoint',
                     to: [{ promise: '1/0', index: 0 }],

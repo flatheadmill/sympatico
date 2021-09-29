@@ -98,6 +98,7 @@ class Bucket {
             this.bucket.events.push({
                 method: 'depart',
                 series: this.bucket.series[0],
+                index: 0,
                 request: [{
                     method: 'appoint',
                     to: [ majority[0] ],
@@ -171,6 +172,7 @@ class Bucket {
             this.bucket.events.push({
                 method: 'paxos',
                 series: this.bucket.series[0],
+                index: -1,
                 request: [{
                     method: 'appoint', majority: combined, to: [ combined[0] ]
                 }],
@@ -191,6 +193,7 @@ class Bucket {
                     this.bucket.events.push({
                         method: 'paxos',
                         series: this.bucket.series[0],
+                        index: this.bucket.index + 1,
                         request: [{
                             method: 'appoint',
                             to: [ this.left[0] ],
@@ -234,6 +237,7 @@ class Bucket {
             this.bucket.events.push({
                 method: 'paxos',
                 series: this.bucket.series[0],
+                index: -1,
                 request: [{
                     method: 'appoint',
                     to: [ expanded[0] ],
@@ -258,6 +262,7 @@ class Bucket {
                     this.bucket.events.push({
                         method: 'paxos',
                         series: this.bucket.series[0],
+                        index: this.bucket.index + 1,
                         request: [{
                             method: 'appoint',
                             to: [ this.to[0] ],
