@@ -8,17 +8,113 @@ about losing the leader.
 
 ## Thu Sep  9 01:20:20 CDT 2021
 
-Occurs to me that pause should be universal. We can simplify all the actions if
-we pause the bucket two-phase commit, then set the new government as the last
-action in phaser's queue. We use the external Paxos to control this.
+Going to rewrite as of `Wed Sep 29 22:10:09 CDT 2021`.
+
+Phasers will always pause when they receive a new appointment. When paused
+messages will be added to a backlog queue. In the backlog queue messages wait
+and the network request that submitted the message waits for a promise. This
+allows us to use usurp logic for all appointments.
+
+Note that "majority" is a misnomer which should be addressed.
+
+Because we pause we do not have to worry about syncing messages. When we resume
+the backlog queue is checked against the new table and the message is hopped to
+the correct leader if necessary. We do not have to pass the queued messages
+between participants possibly renumbering their promises.
+
+Government are always added to the end of the internal queue. When the
+government is a departure we run the existing queue omitting the departed
+member. Retry logic should be handled by the phaser. The network should make an
+effort to deliver and then tell the phaser the effort failed so that if there is
+a departure the phaser can submit to remaining majority.
+
+All messages are sent through paxos. We can entrust state to be preserved in
+paxos as well. That is, rather than maintaining an internal index when the
+distributor is indexing through the array of buckets, the bucket can submit a
+message indicating its index in the array and that it is done with any
+appointments so that when the distributor receives the message it can use that
+index and increment it.
+
+We use the broadcast capability of Compassion to coordinate the messages. All
+participants maintain the same distribution state using a distributor object
+which is a deterministic state machine. The distributor will emit messages. They
+will either be paxos messages that should be enqueued into paxos and
+distributed to be processed by the participants or immediate messages that
+should be processed immediately by the current participant. When the message is
+a paxos message only the leader of the paxos consensus will actually enqueue the
+messages for distribution.
+
+The messages queued into paxos have a series of request messages and a series of
+response messages. Each message in either series is addressed to one or specific
+buckets addressed by instance address and bucket index. We do not use Compassion
+response messages, but we do use broadcast and response (i.e. map and reduce) to
+know that everyone has received the message. Thus, each message we send out we
+we are guaranteed to get a response. When we send a message we specify the
+actions to take on receipt and response.
+
+Four the rest of this document I'm going to refer to this as a broadcast. Or
+I'll try. We'll see what best describes it.
+
+TODO Not sure how to process messages in our distributor though when they are
+not address. The distributor needs to know that the message was handled so it
+can update its state.
+
+Departure can change the leader and our algorithm here is always reset by a
+departure. Upon departure we stop processing any expansion and migration and
+deal with the departure.
+
+Each departure increments a series number. The series number is assigned to each
+message when it is sent. When we receive messages with a series number less than
+the current series we drop the message.
+
+TODO Stopping migration is simple enough to imagine. It's just falling back or
+falling forward in the migration. Harder to consider expansion. We end up having
+a number of buckets in an idle state waiting to be build out. How do we decide
+to move from one state to the next? Perhaps it is reasonable to have the bucket
+inspect the previous bucket balance and the current bucket balance and determine
+if it is in the correct state itself.
+
+Actually, even with that, there is no way for the bucket to know if it has split
+or not without inspecting the state of bucket it is supposed to split to.
+
+We could have an initial bucket state, a state of idle and if split fails we
+revert to idle. It would be true for the bootstrapped entry, but once
+bootstrapping it does not revert, it raises and error. Thereafter, until such
+time as we implement bucket reduction, which is likely never, we will only
+expand so any idle bucket is one that must be populated from the bucker in the
+earlier half of the buckets array.
+
+TODO The above is good. Typed it out. On some additional pass you can tighten it
+up.
 
 Expand is as follows.
 
+We send an appointment that expands the phaser to include the existing
+majority with the new majority. The appointment will pause message processing
+and the new majority message is added to the internal queue. The leader of the
+existing majority will block until the appointment is successful, so that the
+return from the broadcast will indicate that the appointment is successful.
+
+When we get a return from the expansion broadcast we send a message to the new
+leader to usurp with a flag to resume the backlog of the old leader which will
+hop messages to the new leader.
+
+The new leader was not paused, though. It would be referencing its bucket table
+to determine the leader. TODO We could put it in a paused state with the initial
+message, but that becomes a race condition. It should be in a paused state
+because it is not a leader. Without sorting out how exactly, we can assume there
+are races where someone is sending it messages before it knows it is to become
+the leader, so maybe the queues are in a backlogged state by default.
+
+Prior to the return of the expansion broadcast, if there is a departure we will
+fall back to the existing majority. After a successful expansion broadcast
+returns we will fall forward to the new majority on on departure.
+
  * Send a message to pause the phaser, all messages are queued in an queue
  external to the phaser so they are not promised.
- * Send a message to expand the phaser to include the new majority. The new
+ * Send an appointment to expand the phaser to include the new majority. The new
  government is added to the end of the internal queue. When it completes we
- notify that we've completed this is barier, a successful expansion.
+ notify that we've completed this is barrier, a successful expansion.
  * If we have a departure of a member before the successful expansion message,
  we fall back to initial majority less the departed member. If it is after a
  successful expansion we fall back to the subsequent majority less the departed
