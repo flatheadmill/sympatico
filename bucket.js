@@ -21,6 +21,12 @@ class Bucket {
             this.stable = false
         }
 
+        desired (instances) {
+            return majority
+                .map(promise => instances.findIndex(promises => ~promises.indexOf(promise)))
+                .map(index => instances[index][0])
+        }
+
         depart (promise) {
             const departed = this.departed.concat(promise)
             const reduced = this.majority.filter(address => !~departed.indexOf(address.promise))
@@ -116,10 +122,10 @@ class Bucket {
     static Bootstrap = class extends Bucket.Strategy {
         constructor (bucket, distribution) {
             super(bucket, [], [])
-            const instances = distribution.to.instances.concat(distribution.to.instances)
-            const index = distribution.to.buckets[bucket.index]
+            const instances = distribution.instances.concat(distribution.instances)
+            const index = distribution.buckets[bucket.index]
             this.step = 0
-            this.majority = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+            this.majority = instances.slice(index, index + Math.min(distribution.instances.length, bucket.majoritySize))
                                      .map(promise => { return { promise: promise[0], index: bucket.index } })
             this.bucket = bucket
             const promise = distribution.promise
@@ -144,12 +150,14 @@ class Bucket {
         }
 
         distribution (distribution) {
-            if (this.majority.length == 0) {
+            switch (distribution.method) {
+            case 'bootstrap':
                 return new Bucket.Bootstrap(this.bucket, distribution)
-            } else if (distribution.to.buckets.length > distribution.from.buckets.length) {
+            case 'expand':
                 return new Bucket.Expand(this.bucket, this.majority, distribution)
+            case 'migrate':
+                return new Bucket.Migrate(this.bucket, this.majority, distribution)
             }
-            return new Bucket.Migrate(this.bucket, this.majority, distribution)
         }
     }
 
@@ -158,11 +166,11 @@ class Bucket {
             super(bucket, majority, [])
             this.bucket = bucket
             this.distribution = distribution
-            const instances = distribution.to.instances.concat(distribution.to.instances)
-            const index = distribution.from.buckets[bucket.index]
-            const participants = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+            const instances = distribution.instances.concat(distribution.instances)
+            const index = distribution.buckets[bucket.index]
+            const participants = instances.slice(index, index + Math.min(distribution.instances.length, bucket.majoritySize))
             this.left = participants.map(promise => { return { promise: promise[0], index: bucket.index } })
-            this.right = participants.map(promise => { return { promise: promise[0], index: bucket.index + distribution.from.buckets.length } })
+            this.right = participants.map(promise => { return { promise: promise[0], index: bucket.index + distribution.buckets.length / 2 } })
             // TODO Not right. Perpetuate existing majority.
             this.collapsable = this.left
             // Until the instance count grows to double the majority size, we
@@ -224,11 +232,12 @@ class Bucket {
 
     static Migrate = class extends Bucket.Strategy {
         constructor (bucket, majority, distribution) {
+            console.log('constructured')
             super(bucket, majority, distribution)
             const from = majority.map(address => address.promise)
-            const instances = distribution.to.instances.concat(distribution.to.instances)
-            const index = distribution.to.buckets[bucket.index]
-            const to = instances.slice(index, index + Math.min(distribution.to.instances.length, bucket.majoritySize))
+            const instances = distribution.instances.concat(distribution.instances)
+            const index = distribution.buckets[bucket.index]
+            const to = instances.slice(index, index + Math.min(distribution.instances.length, bucket.majoritySize))
                                 .map(instance => instance[0])
             const combined = from.concat(to)
             const expanded = combined.filter((promise, index) => combined.indexOf(promise) == index)

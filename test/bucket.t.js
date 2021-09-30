@@ -8,9 +8,10 @@ require('proof')(12, async okay => {
         // Single element bootstrap.
         {
             bucket.distribution({
+                method: 'bootstrap',
                 promise: '1/0',
-                from: { instances: [], buckets: [] },
-                to: { instances: [[ '1/0' ]], buckets: [ 0 ] },
+                instances: [[ '1/0' ]],
+                buckets: [ 0 ],
                 departed: []
             })
             const dispatch = shifter.shift()
@@ -32,9 +33,10 @@ require('proof')(12, async okay => {
         // Expansion.
         {
             bucket.distribution({
+                method: 'expand',
                 promise: '2/0',
-                to: { instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 0, 0 ] },
-                from: { instances: [[ '1/0' ]], buckets: [ 0 ] },
+                instances: [[ '1/0' ], [ '2/0' ]],
+                buckets: [ 0, 0 ],
                 departed: []
             })
             {
@@ -96,9 +98,10 @@ require('proof')(12, async okay => {
         // Redistribution.
         {
             bucket.distribution({
+                method: 'migrate',
                 promise: '3/0',
-                from: { instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 0, 0 ] },
-                to: { instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 1, 0 ] },
+                instances: [[ '1/0' ], [ '2/0' ]],
+                buckets: [ 1, 0 ],
                 departed: []
             })
             {
