@@ -14,9 +14,19 @@ class Distributor {
         this.instances = []
         this.departed = []
         this.series = [ 0 ]
+        this.buckets = []
         this.distribution = { complete: true, to: [] }
         this.configure({ active, ratio })
         this.events = new Queue
+    }
+
+    get status () {
+        return {
+            arrivals: this.arrivals.slice(0),
+            instances: this.instances.slice(0),
+            departed: this.departed.slice(0),
+            buckets: this.buckets.map(bucket => bucket.status)
+        }
     }
 
     configure (configuration) {

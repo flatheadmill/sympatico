@@ -19,6 +19,12 @@ class Bucket {
             this.majority = majority
             this.departed = departed
             this.stable = false
+            this.name = 'stable'
+            this.stage = 0
+        }
+
+        get status () {
+            return { name: this.state, stage: this.stage }
         }
 
         desired (instances) {
@@ -299,6 +305,14 @@ class Bucket {
         this.majoritySize = majoritySize
         this.events = events
         this._strategy = new Bucket.Stable(this, [])
+    }
+
+    get status () {
+        return {
+            majority: this._strategy.majority,
+            strategy: this._strategy.name,
+            stage: this._strategy.stage
+        }
     }
 
     get stable () {

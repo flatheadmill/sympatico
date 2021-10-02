@@ -1,4 +1,4 @@
-require('proof')(5, okay => {
+require('proof')(6, okay => {
     const Monotonic = require('paxos/monotonic')
     const Distributor = require('../distributor')
 
@@ -9,6 +9,12 @@ require('proof')(5, okay => {
             this.distributor = new Distributor({ active: 3, ratio: 4 })
             this.shifter = this.distributor.events.shifter().sync
             this.majorities = []
+        }
+
+        get status () {
+            return {
+                distributor: distributor.status
+            }
         }
 
         request (message) {
@@ -37,6 +43,14 @@ require('proof')(5, okay => {
             this.promise = '0/0'
             this.leader = null
             this.log = []
+        }
+
+        get status () {
+            const status = []
+            for (const machine in this.machines) {
+                status.push(this.machines[machine].status)
+            }
+            return status
         }
 
         arrive () {
@@ -133,11 +147,22 @@ require('proof')(5, okay => {
 
     distributor.complete('1/0')
 
-    console.log('---')
-
     const network = new Network
 
     network.arrive()
 
     network.drain()
+
+    okay(network.status, [{
+        distributor: {
+            arrivals: [],
+            instances: [[ '1/0' ]],
+            departed: [],
+            buckets: [{
+                majority: [{ promise: '1/0', index: 0 }],
+                strategy: 'stable',
+                stage: 0
+            }]
+        }
+    }], 'bootstrapped')
 })
