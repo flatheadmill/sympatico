@@ -67,7 +67,9 @@ class Distributor {
                 departed: []
             }
             this.events.push(this.buckets[0].bootstrap(this.distribution))
-        } else {
+        } else if (this.departed.length != 0) {
+        } else if (this.instances.length < this.active) {
+            console.log('EXPAND')
         }
     }
 
