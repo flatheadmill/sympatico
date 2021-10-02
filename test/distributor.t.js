@@ -13,12 +13,11 @@ require('proof')(6, okay => {
 
         get status () {
             return {
-                distributor: distributor.status
+                distributor: this.distributor.status
             }
         }
 
         request (message) {
-            console.log('?', message, new Error().stack)
             if (message.method == 'paxos') {
                 for (const request of message.request) {
                     for (const to of request.to) {
@@ -96,6 +95,9 @@ require('proof')(6, okay => {
                 }
             }
             if (this.next.to.length == 0) {
+                if (this.next.message.next != null) {
+                    this.events.push(this.next.message.next)
+                }
                 this.next = null
             }
             return true
@@ -122,30 +124,34 @@ require('proof')(6, okay => {
         okay(distributor.active, Number.MAX_SAFE_INTEGER, 'default active')
     }
 
-    const distributor = new Distributor({ active: 3, ratio: 4 })
+    {
+        const distributor = new Distributor({ active: 3, ratio: 4 })
 
-    const shifter = distributor.events.shifter().sync
+        const shifter = distributor.events.shifter().sync
 
-    okay(distributor.ratio, 4, 'constructor ratio')
-    okay(distributor.active, 3, 'constructor maximum')
+        okay(distributor.ratio, 4, 'constructor ratio')
+        okay(distributor.active, 3, 'constructor maximum')
 
-    distributor.arrive('1/0')
+        distributor.arrive('1/0')
 
-    okay(shifter.shift(), {
-        method: 'paxos',
-        request: [{
-            method: 'appoint',
-            to: [{ promise: '1/0', index: 0 }],
-            majority: [{ promise: '1/0', index: 0 }],
-        }],
-        response: [{
-            method: 'majority',
-            to: [{ promise: '1/0', index: 0 }],
-            majority: [{ promise: '1/0', index: 0 }],
-        }]
-    }, 'arrive')
+        const dispatch = shifter.shift()
+        okay(dispatch, {
+            method: 'paxos',
+            request: [{
+                method: 'appoint',
+                to: [{ promise: '1/0', index: 0 }],
+                majority: [{ promise: '1/0', index: 0 }],
+            }],
+            response: [{
+                method: 'majority',
+                to: [{ promise: '1/0', index: 0 }],
+                majority: [ '1/0' ]
+            }],
+            next: null
+        }, 'arrive')
 
-    distributor.complete('1/0')
+        distributor.complete(dispatch)
+    }
 
     const network = new Network
 
@@ -158,11 +164,7 @@ require('proof')(6, okay => {
             arrivals: [],
             instances: [[ '1/0' ]],
             departed: [],
-            buckets: [{
-                majority: [{ promise: '1/0', index: 0 }],
-                strategy: 'stable',
-                stage: 0
-            }]
+            buckets: [{ majority: [ '1/0' ] }]
         }
     }], 'bootstrapped')
 })

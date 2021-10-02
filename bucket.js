@@ -13,305 +13,18 @@ class Bucket {
         return false
     }
 
-    static Strategy = class {
-        constructor (bucket, majority, departed) {
-            this.bucket = bucket
-            this.majority = majority
-            this.departed = departed
-            this.stable = false
-            this.name = 'stable'
-            this.stage = 0
-        }
-
-        get status () {
-            return { name: this.state, stage: this.stage }
-        }
-
-        desired (instances) {
-            return majority
-                .map(promise => instances.findIndex(promises => ~promises.indexOf(promise)))
-                .map(index => instances[index][0])
-        }
-
-        depart (promise) {
-            const departed = this.departed.concat(promise)
-            const reduced = this.majority.filter(address => !~departed.indexOf(address.promise))
-            if (reduced.length != this.majority.length) {
-                if (reduced[0].promise == this.bucket.promise) {
-                    return new Bucket.Departure(this.bucket, reduced, departed)
-                }
-                return new Bucket.Departed(this.bucket, reduced, departed)
-            }
-            return this
-        }
-
-        response (message) {
-            assert.equal(message.method, 'majority', 'unexpected message')
-            return new Bucket.Stable(this.bucket, message.majority)
-        }
-    }
-
-    static Departed = class extends Bucket.Strategy {
-        constructor (bucket, majority, departed) {
-            super(bucket, majority, departed)
-            this.restoration = [{ promise: '0/0', index: 0 }]
-        }
-
-        distribution (distribution) {
-            const instances = distribution.to.instances.concat(distribution.to.instances)
-            const index = distribution.to.buckets[this.bucket.index]
-            const size = Math.min(distribution.to.instances.length, this.bucket.majoritySize)
-            const majority = instances.slice(index, index + size)
-                                      .filter(promise => !~this.departed.indexOf(promise))
-                                      .map(promise => { return { promise: promise[0], index: this.bucket.index } })
-            if (majority.length == size) {
-                this.restoration = majority
-            }
-            if (! Bucket.equal(majority, this.majority)) {
-                const combined = this.majority.map(address => address.promise).concat(majority.map(address => address.promise))
-                const deduped = combined.filter((promise, index) => combined.indexOf(promise) == index).map(promise => {
-                    return { promise, index: this.bucket.index }
-                })
-                this.bucket.events.push({
-                    method: 'paxos',
-                    series: this.bucket.series[0],
-                    request: [{
-                        method: 'appoint',
-                        to: [ deduped[0] ],
-                        majority: deduped
-                    }],
-                    response: [{
-                        method: 'majority',
-                        to: deduped,
-                        majority: majority
-                    }]
-                })
-            }
-            return this
-        }
-
-        response (message) {
-            switch (message.method) {
-            case 'majority': {
-                    if (Bucket.equal(this.restoration, message.majority)) {
-                        return new Bucket.Stable(this.bucket, message.majority)
-                    }
-                    return new Bucket.Departed(this.bucket, message.majority, this.departed)
-                }
-            }
-            return this
-        }
-    }
-
-    static Departure = class extends Bucket.Departed {
-        constructor (bucket, majority, departed) {
-            super(bucket, majority, departed)
-            this.restoration = [{ promise: '0/0', index: 1 }]
-            this.bucket.events.push({
-                method: 'depart',
-                series: this.bucket.series[0],
-                index: 0,
-                request: [{
-                    method: 'appoint',
-                    to: [ majority[0] ],
-                    majority: majority
-                }],
-                response: [{
-                    method: 'majority',
-                    to: majority.slice(1),
-                    majority: majority
-                }]
-            })
-        }
-    }
-
-    static Bootstrap = class extends Bucket.Strategy {
-        constructor (bucket, distribution) {
-            super(bucket, [], [])
-            const instances = distribution.instances.concat(distribution.instances)
-            const index = distribution.buckets[bucket.index]
-            this.step = 0
-            this.majority = instances.slice(index, index + Math.min(distribution.instances.length, bucket.majoritySize))
-                                     .map(promise => { return { promise: promise[0], index: bucket.index } })
-            this.bucket = bucket
-            const promise = distribution.promise
-            this.bucket.events.push({
-                method: 'paxos',
-                request: [{
-                    method: 'appoint',
-                    to: [ this.majority[0] ],
-                    majority: this.majority.slice()
-                }],
-                response: this.majority.map(address => {
-                    return { method: 'majority', to: this.majority, majority: this.majority }
-                })
-            })
-        }
-    }
-
-    static Stable = class extends Bucket.Strategy {
-        constructor (bucket, majority, departed = []) {
-            super(bucket, majority, [])
-            this.stable = true
-        }
-
-        distribution (distribution) {
-            switch (distribution.method) {
-            case 'bootstrap':
-                return new Bucket.Bootstrap(this.bucket, distribution)
-            case 'expand':
-                return new Bucket.Expand(this.bucket, this.majority, distribution)
-            case 'migrate':
-                return new Bucket.Migrate(this.bucket, this.majority, distribution)
-            }
-        }
-    }
-
-    static Expand = class extends Bucket.Strategy {
-        constructor (bucket, majority, distribution) {
-            super(bucket, majority, [])
-            this.bucket = bucket
-            this.distribution = distribution
-            const instances = distribution.instances.concat(distribution.instances)
-            const index = distribution.buckets[bucket.index]
-            const participants = instances.slice(index, index + Math.min(distribution.instances.length, bucket.majoritySize))
-            this.left = participants.map(promise => { return { promise: promise[0], index: bucket.index } })
-            this.right = participants.map(promise => { return { promise: promise[0], index: bucket.index + distribution.buckets.length / 2 } })
-            // TODO Not right. Perpetuate existing majority.
-            this.collapsable = this.left
-            // Until the instance count grows to double the majority size, we
-            // will have some overlap.
-            const combined = this.left.concat(this.right)
-            this.state = 'replicating'
-            this.bucket.events.push({
-                method: 'paxos',
-                series: this.bucket.series[0],
-                index: -1,
-                request: [{
-                    method: 'appoint', majority: combined, to: [ combined[0] ]
-                }],
-                response: [{
-                    method: 'replicated', majority: combined, to: [ combined[0] ]
-                }, {
-                    method: 'majority', to: this.left.slice(1), majority: this.left
-                }, {
-                    method: 'majority', to: this.right, majority: this.right
-                }]
-            })
-        }
-
-        response (message) {
-            switch (message.method) {
-            case 'replicated': {
-                    this.collapse = this.left
-                    this.bucket.events.push({
-                        method: 'paxos',
-                        series: this.bucket.series[0],
-                        index: this.bucket.index + 1,
-                        request: [{
-                            method: 'appoint',
-                            to: [ this.left[0] ],
-                            majority: this.left
-                        }, {
-                            method: 'appoint',
-                            to: [ this.right[0] ],
-                            majority: this.right
-                        }],
-                        response: [{
-                            method: 'majority',
-                            to: [ this.left[0] ],
-                            majority: this.left
-                        }, {
-                            method: 'majority',
-                            to: [ this.right[0] ],
-                            majority: this.right
-                        }]
-                    })
-                    return this
-                }
-            default: {
-                    return super.response(message)
-                }
-            }
-        }
-    }
-
-    static Migrate = class extends Bucket.Strategy {
-        constructor (bucket, majority, distribution) {
-            console.log('constructured')
-            super(bucket, majority, distribution)
-            const from = majority.map(address => address.promise)
-            const instances = distribution.instances.concat(distribution.instances)
-            const index = distribution.buckets[bucket.index]
-            const to = instances.slice(index, index + Math.min(distribution.instances.length, bucket.majoritySize))
-                                .map(instance => instance[0])
-            const combined = from.concat(to)
-            const expanded = combined.filter((promise, index) => combined.indexOf(promise) == index)
-                                     .map(promise => { return { promise, index: bucket.index } })
-            this.to = to.map(promise => { return { promise, index: bucket.index } })
-            this.bucket.events.push({
-                method: 'paxos',
-                series: this.bucket.series[0],
-                index: -1,
-                request: [{
-                    method: 'appoint',
-                    to: [ expanded[0] ],
-                    majority: expanded
-                }],
-                response: [{
-                    method: 'expanded',
-                    to: [ expanded[0] ],
-                    majority: expanded
-                }, {
-                    method: 'majority',
-                    to: expanded.slice(1),
-                    majority: this.to
-                }]
-            })
-        }
-
-        response (message) {
-            switch (message.method) {
-            case 'expanded': {
-                    this.majority = this.to
-                    this.bucket.events.push({
-                        method: 'paxos',
-                        series: this.bucket.series[0],
-                        index: this.bucket.index + 1,
-                        request: [{
-                            method: 'appoint',
-                            to: [ this.to[0] ],
-                            majority: this.to
-                        }],
-                        response: [{
-                            method: 'majority',
-                            to: this.to,
-                            majority: this.to
-                        }]
-                    })
-                    return this
-                }
-            default: {
-                    return super.response(message)
-                }
-            }
-        }
-    }
-
-    constructor (series, events, promise, index, majoritySize) {
+    constructor (series, promise, index, majoritySize) {
         this.series = series
         this.promise = promise
         this.index = index
         this.majoritySize = majoritySize
-        this.events = events
-        this._strategy = new Bucket.Stable(this, [])
+        this.majority = []
+        this.departed = []
     }
 
     get status () {
         return {
-            majority: this._strategy.majority,
-            strategy: this._strategy.name,
-            stage: this._strategy.stage
+            majority: this.majority.slice(0)
         }
     }
 
@@ -319,20 +32,150 @@ class Bucket {
         return this._strategy.stable
     }
 
-    get majority () {
-        return this._strategy.majority
-    }
-
     depart (promise) {
         this._strategy = this._strategy.depart(promise)
     }
 
-    distribution (distribution) {
-        this._strategy = this._strategy.distribution(distribution)
+    bootstrap (options) {
+        const instances = options.instances.concat(options.instances)
+        const index = options.buckets[this.index]
+        const majority = instances.slice(index, index + Math.min(options.instances.length, this.majoritySize))
+                                  .map(promises => { return { promise: promises[0], index: this.index } })
+        return {
+            method: 'paxos',
+            request: [{
+                method: 'appoint',
+                to: [ majority[0] ],
+                majority: majority
+            }],
+            response: majority.map(address => {
+                return { method: 'majority', to: majority, majority: majority.map(address => address.promise) }
+            }),
+            next: null
+        }
+    }
+
+    expand (options) {
+        const instances = options.instances.concat(options.instances)
+        const index = options.buckets[this.index]
+        const participants = instances.slice(index, index + Math.min(options.instances.length, this.majoritySize))
+        const left = participants.map(promise => ({ promise: promise[0], index: this.index }))
+        const right = participants.map(promise => ({ promise: promise[0], index: this.index + options.buckets.length / 2 }))
+        const combined = left.concat(right)
+        return {
+            method: 'paxos',
+            series: this.series[0],
+            index: this.index,
+            request: [{
+                method: 'appoint', majority: combined, to: [ combined[0] ]
+            }],
+            response: [{
+                method: 'majority', to: left, majority: left.map(address => address.promise)
+            }, {
+                method: 'majority', to: right, majority: right.map(address => address.promise)
+            }],
+            next: {
+                method: 'paxos',
+                series: this.series[0],
+                index: this.index,
+                request: [{
+                    method: 'appoint',
+                    to: [ left[0] ],
+                    majority: left
+                }, {
+                    method: 'appoint',
+                    to: [ right[0] ],
+                    majority: right
+                }],
+                response: [{
+                    method: 'purge',
+                    series: this.series[0],
+                    index: this.index,
+                    to: combined
+                }],
+                next: null
+            }
+        }
+    }
+
+    migrate (options) {
+        const from = this.majority.filter(promise => ! this.departed.includes(promise))
+        const instances = options.instances.concat(options.instances)
+        const index = options.buckets[this.index]
+        const to = instances.slice(index, index + Math.min(options.instances.length, this.majoritySize))
+                            .map(instance => instance[0])
+        const combined = from.concat(to)
+        const difference = from.filter(promise => ! to.includes(promise))
+                               .map(promise => ({ promise, index: this.index }))
+        const indexed = {
+            combined: combined.filter((promise, index) => combined.indexOf(promise) == index)
+                              .map(promise => { return { promise, index: this.index } }),
+            to: to.map(promise => { return { promise, index: this.index } }),
+            difference: difference.map(promise => { return { promise, index: this.index } })
+        }
+        return {
+            method: 'paxos',
+            series: this.series[0],
+            index: this.index,
+            request: [{
+                method: 'appoint',
+                to: [ indexed.combined[0] ],
+                majority: indexed.combined
+            }],
+            response: [{
+                method: 'majority',
+                to: indexed.to,
+                majority: to
+            }, {
+                method: 'majority',
+                to: indexed.difference,
+                majority: difference
+            }],
+            next: {
+                method: 'paxos',
+                series: this.series[0],
+                index: this.index,
+                request: [{
+                    method: 'appoint',
+                    to: [ indexed.to[0] ],
+                    majority: indexed.to
+                }],
+                response: [{
+                    method: 'resume',
+                    to: indexed.to
+                }],
+                next: null
+            }
+        }
+    }
+
+    depart (promise) {
+        this.departed = this.departed.concat(promise)
+        const reduced = this.majority.filter(promise => ! this.departed.includes(promise))
+        const majority = reduced.map(promise => ({ promise, index: this.index }))
+        if (reduced.length != this.majority.length && reduced[0] == this.promise) {
+            return { method: 'depart', majority: majority }
+        }
+        return null
+    }
+
+    desired (instances) {
+        return this.majority
+            .map(promise => instances.findIndex(promises => promises.includes(promise)))
+            .map(index => instances[index][0])
+    }
+
+    replace (options) {
+        const desired = this.desired(options.instances)
+        const reduced = this.majority.filter(promise => ! this.departed.includes(promise))
+        if (! Bucket.equal(reduced, desired) && reduced[0] == this.promise) {
+            return this.migrate(options)
+        }
     }
 
     response (message) {
-        this._strategy = this._strategy.response(message)
+        assert.equal(message.method, 'majority', 'unexpected message')
+        this.majority = message.majority
     }
 }
 

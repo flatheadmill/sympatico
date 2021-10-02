@@ -59,14 +59,14 @@ class Distributor {
         // If we see the first promise we are bootstrapping.
         if (promise == '1/0') {
             this.instances.push([ this.arrivals.shift() ])
-            this.buckets = [ new Bucket(this.series, this.events, promise, 0, 3) ]
+            this.buckets = [ new Bucket(this.series, promise, 0, 3) ]
             this.stable = false
-            this.buckets[0].distribution(this.distribution = {
-                method: 'bootstrap',
+            this.distribution = {
                 instances: [[ '1/0' ]],
                 buckets: [ 0 ],
                 departed: []
-            })
+            }
+            this.events.push(this.buckets[0].bootstrap(this.distribution))
         } else {
         }
     }
@@ -144,9 +144,9 @@ class Distributor {
         }
     }
 
-    complete (promise) {
-        if (promise == this.distribution.promise) {
-            this.distribution.complete = false
+    complete (dispatch) {
+        const index = dispatch.index + 1
+        if (index < this.buckets.length) {
         }
     }
 }
