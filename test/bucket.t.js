@@ -6,9 +6,12 @@ require('proof')(7, async okay => {
         okay(bucket.majority, [], 'null bucket majority')
         // Single element bootstrap.
         {
-            const dispatch = bucket.bootstrap({ instances: [[ '1/0' ]], buckets: [ 0 ] })
-            okay(dispatch, {
+            const messages = bucket.bootstrap({ instances: [[ '1/0' ]], buckets: [ 0 ] })
+            okay(messages, [{
                 method: 'paxos',
+                series: 0,
+                index: 0,
+                cookie: '0',
                 request: [{
                     method: 'appoint',
                     to: [{ promise: '1/0', index: 0 }],
@@ -18,18 +21,18 @@ require('proof')(7, async okay => {
                     method: 'majority',
                     to: [{ promise: '1/0', index: 0 }],
                     majority: [ '1/0' ]
-                }],
-                next: null
-            }, 'bootstrap')
-            bucket.response(dispatch.response[0])
+                }]
+            }], 'bootstrap')
+            bucket.response(messages[0].response[0])
         }
         // Expansion.
         {
-            const dispatch = bucket.expand({ instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 0, 0 ] })
-            okay(dispatch, {
+            const messages = bucket.expand({ instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 0, 0 ] })
+            okay(messages, [{
                 method: 'paxos',
                 series: 0,
                 index: 0,
+                cookie: '0',
                 request: [{
                     method: 'appoint',
                     to: [{ promise: '1/0', index: 0 }],
@@ -43,38 +46,36 @@ require('proof')(7, async okay => {
                     method: 'majority',
                     to: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }],
                     majority: [ '1/0', '2/0' ]
-                }],
-                next: {
-                    method: 'paxos',
-                    series: 0,
-                    index: 0,
-                    request: [{
-                        method: 'appoint',
-                        to: [{ promise: '1/0', index: 0 }],
-                        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
-                    }, {
-                        method: 'appoint',
-                        to: [{ promise: '1/0', index: 1 }],
-                        majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                    }],
-                    response: [{
-                        method: 'purge',
-                        series: 0,
-                        index: 0,
-                        to: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
-                    }],
-                    next: null
-                }
-            }, 'expand')
-            bucket.response(dispatch.response[0])
-        }
-        // Redistribution.
-        {
-            const dispatch = bucket.migrate({ instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 1, 0 ] })
-            okay(dispatch, {
+                }]
+            }, {
                 method: 'paxos',
                 series: 0,
                 index: 0,
+                cookie: '0',
+                request: [{
+                    method: 'appoint',
+                    to: [{ promise: '1/0', index: 0 }],
+                    majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
+                }, {
+                    method: 'appoint',
+                    to: [{ promise: '1/0', index: 1 }],
+                    majority: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
+                }],
+                response: [{
+                    method: 'purge',
+                    to: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }]
+                }],
+            }], 'expand')
+            bucket.response(messages[0].response[0])
+        }
+        // Redistribution.
+        {
+            const messages = bucket.migrate({ instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 1, 0 ] })
+            okay(messages, [{
+                method: 'paxos',
+                series: 0,
+                index: 0,
+                cookie: '0',
                 request: [{
                     method: 'appoint',
                     to: [{ promise: '1/0', index: 0 }],
@@ -89,36 +90,36 @@ require('proof')(7, async okay => {
                     to: [],
                     majority: []
                 }],
-                next: {
-                    method: 'paxos',
-                    series: 0,
-                    index: 0,
-                    request: [{
-                        method: 'appoint',
-                        to: [{ promise: '2/0', index: 0 }],
-                        majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
-                    }],
-                    response: [{
-                        method: 'resume',
-                        to: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }],
-                    }],
-                    next: null
-                }
-            }, 'migrate')
-            bucket.response(dispatch.response[0])
+            }, {
+                method: 'paxos',
+                series: 0,
+                index: 0,
+                cookie: '0',
+                request: [{
+                    method: 'appoint',
+                    to: [{ promise: '2/0', index: 0 }],
+                    majority: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }]
+                }],
+                response: [{
+                    method: 'resume',
+                    to: [{ promise: '2/0', index: 0 }, { promise: '1/0', index: 0 }],
+                }],
+            }], 'migrate')
+            bucket.response(messages[0].response[0])
         }
         // Departure.
         {
             const dispatch = bucket.depart('2/0')
-            okay(dispatch, { method: 'depart', majority: [{ promise: '1/0', index: 0 }] }, 'depart')
+            okay(dispatch, [{ method: 'depart', majority: [{ promise: '1/0', index: 0 }] }], 'depart')
         }
         // Restoration.
         {
-            const dispatch = bucket.replace({ instances: [[ '1/0' ], [ '3/0', '2/0' ]], buckets: [ 1, 0 ] })
-            okay(dispatch, {
+            const messages = bucket.replace({ instances: [[ '1/0' ], [ '3/0', '2/0' ]], buckets: [ 1, 0 ] })
+            okay(messages, [{
                 method: 'paxos',
                 series: 0,
                 index: 0,
+                cookie: '0',
                 request: [{
                     method: 'appoint',
                     to: [{ promise: '1/0', index: 0 }],
@@ -132,24 +133,23 @@ require('proof')(7, async okay => {
                     method: 'majority',
                     to: [],
                     majority: []
+                }]
+            }, {
+                method: 'paxos',
+                series: 0,
+                index: 0,
+                cookie: '0',
+                request: [{
+                    method: 'appoint',
+                    to: [{ promise: '3/0', index: 0 }],
+                    majority: [{ promise: '3/0', index: 0 }, { promise: '1/0', index: 0 }]
                 }],
-                next: {
-                    method: 'paxos',
-                    series: 0,
-                    index: 0,
-                    request: [{
-                        method: 'appoint',
-                        to: [{ promise: '3/0', index: 0 }],
-                        majority: [{ promise: '3/0', index: 0 }, { promise: '1/0', index: 0 }]
-                    }],
-                    response: [{
-                        method: 'resume',
-                        to: [{ promise: '3/0', index: 0 }, { promise: '1/0', index: 0 }]
-                    }],
-                    next: null
-                }
-            }, 'restore')
-            bucket.response(dispatch.response[0])
+                response: [{
+                    method: 'resume',
+                    to: [{ promise: '3/0', index: 0 }, { promise: '1/0', index: 0 }]
+                }]
+            }], 'restore')
+            bucket.response(messages[0].response[0])
         }
     }
     {
@@ -160,6 +160,6 @@ require('proof')(7, async okay => {
             majority: [ '1/0', '3/0', '2/0' ]
         })
         const dispatch = bucket.depart('3/0')
-        okay(dispatch, null, 'would not collapse')
+        okay(dispatch, [], 'would not collapse')
     }
 })

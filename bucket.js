@@ -41,8 +41,11 @@ class Bucket {
         const index = options.buckets[this.index]
         const majority = instances.slice(index, index + Math.min(options.instances.length, this.majoritySize))
                                   .map(promises => { return { promise: promises[0], index: this.index } })
-        return {
+        return [{
             method: 'paxos',
+            series: this.series[0],
+            index: this.index,
+            cookie: '0',
             request: [{
                 method: 'appoint',
                 to: [ majority[0] ],
@@ -50,9 +53,8 @@ class Bucket {
             }],
             response: majority.map(address => {
                 return { method: 'majority', to: majority, majority: majority.map(address => address.promise) }
-            }),
-            next: null
-        }
+            })
+        }]
     }
 
     expand (options) {
@@ -62,10 +64,11 @@ class Bucket {
         const left = participants.map(promise => ({ promise: promise[0], index: this.index }))
         const right = participants.map(promise => ({ promise: promise[0], index: this.index + options.buckets.length / 2 }))
         const combined = left.concat(right)
-        return {
+        return [{
             method: 'paxos',
             series: this.series[0],
             index: this.index,
+            cookie: '0',
             request: [{
                 method: 'appoint', majority: combined, to: [ combined[0] ]
             }],
@@ -73,29 +76,26 @@ class Bucket {
                 method: 'majority', to: left, majority: left.map(address => address.promise)
             }, {
                 method: 'majority', to: right, majority: right.map(address => address.promise)
+            }]
+        }, {
+            method: 'paxos',
+            series: this.series[0],
+            index: this.index,
+            cookie: '0',
+            request: [{
+                method: 'appoint',
+                to: [ left[0] ],
+                majority: left
+            }, {
+                method: 'appoint',
+                to: [ right[0] ],
+                majority: right
             }],
-            next: {
-                method: 'paxos',
-                series: this.series[0],
-                index: this.index,
-                request: [{
-                    method: 'appoint',
-                    to: [ left[0] ],
-                    majority: left
-                }, {
-                    method: 'appoint',
-                    to: [ right[0] ],
-                    majority: right
-                }],
-                response: [{
-                    method: 'purge',
-                    series: this.series[0],
-                    index: this.index,
-                    to: combined
-                }],
-                next: null
-            }
-        }
+            response: [{
+                method: 'purge',
+                to: combined
+            }]
+        }]
     }
 
     migrate (options) {
@@ -113,10 +113,11 @@ class Bucket {
             to: to.map(promise => { return { promise, index: this.index } }),
             difference: difference.map(promise => { return { promise, index: this.index } })
         }
-        return {
+        return [{
             method: 'paxos',
             series: this.series[0],
             index: this.index,
+            cookie: '0',
             request: [{
                 method: 'appoint',
                 to: [ indexed.combined[0] ],
@@ -130,23 +131,22 @@ class Bucket {
                 method: 'majority',
                 to: indexed.difference,
                 majority: difference
+            }]
+        }, {
+            method: 'paxos',
+            series: this.series[0],
+            index: this.index,
+            cookie: '0',
+            request: [{
+                method: 'appoint',
+                to: [ indexed.to[0] ],
+                majority: indexed.to
             }],
-            next: {
-                method: 'paxos',
-                series: this.series[0],
-                index: this.index,
-                request: [{
-                    method: 'appoint',
-                    to: [ indexed.to[0] ],
-                    majority: indexed.to
-                }],
-                response: [{
-                    method: 'resume',
-                    to: indexed.to
-                }],
-                next: null
-            }
-        }
+            response: [{
+                method: 'resume',
+                to: indexed.to
+            }]
+        }]
     }
 
     depart (promise) {
@@ -154,9 +154,9 @@ class Bucket {
         const reduced = this.majority.filter(promise => ! this.departed.includes(promise))
         const majority = reduced.map(promise => ({ promise, index: this.index }))
         if (reduced.length != this.majority.length && reduced[0] == this.promise) {
-            return { method: 'depart', majority: majority }
+            return [{ method: 'depart', majority: majority }]
         }
-        return null
+        return []
     }
 
     desired (instances) {
