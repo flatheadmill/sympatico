@@ -3,7 +3,8 @@ require('proof')(5, okay => {
     const Distributor = require('../distributor')
 
     class Machine {
-        constructor (address) {
+        constructor (network, address) {
+            this.network = network
             this.address = address
             this.distributor = new Distributor({ active: 3, ratio: 4 })
             this.shifter = this.distributor.events.shifter().sync
@@ -11,6 +12,7 @@ require('proof')(5, okay => {
         }
 
         request (message) {
+            console.log('?', message, new Error().stack)
             if (message.method == 'paxos') {
                 for (const request of message.request) {
                     for (const to of request.to) {
@@ -38,7 +40,7 @@ require('proof')(5, okay => {
         }
 
         arrive () {
-            this.machines[this.address] = new Machine(String(this.address))
+            this.machines[this.address] = new Machine(this, String(this.address))
             this.address++
             this.promise = Monotonic.increment(this.promise, 0)
             if (this.promise == '1/0') {

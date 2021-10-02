@@ -52,8 +52,9 @@ class Distributor {
             this.buckets = [ new Bucket(this.series, this.events, promise, 0, 3) ]
             this.stable = false
             this.buckets[0].distribution(this.distribution = {
-                from: { instances: [], buckets: [] },
-                to: { instances: [[ '1/0' ]], buckets: [ 0 ] },
+                method: 'bootstrap',
+                instances: [[ '1/0' ]],
+                buckets: [ 0 ],
                 departed: []
             })
         } else {
