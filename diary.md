@@ -28,32 +28,47 @@ member. Retry logic should be handled by the phaser. The network should make an
 effort to deliver and then tell the phaser the effort failed so that if there is
 a departure the phaser can submit to remaining majority.
 
-All messages are sent through paxos. We can entrust state to be preserved in
-paxos as well. That is, rather than maintaining an internal index when the
-distributor is indexing through the array of buckets, the bucket can submit a
-message indicating its index in the array and that it is done with any
-appointments so that when the distributor receives the message it can use that
-index and increment it.
+All messages are sent through paxos. (TODO Dubious ->) We can entrust state to
+be preserved in paxos as well. That is, rather than maintaining an internal
+index when the distributor is indexing through the array of buckets, the bucket
+can submit a message indicating its index in the array and that it is done with
+any appointments so that when the distributor receives the message it can use
+that index and increment it.
 
-We use the broadcast capability of Compassion to coordinate the messages. All
-participants maintain the same distribution state using a distributor object
+We use a Conference to countdown acknowledgements.
+
+All participants maintain the same distribution state using a distributor object
 which is a deterministic state machine. The distributor will emit messages. They
-will either be paxos messages that should be enqueued into paxos and
-distributed to be processed by the participants or immediate messages that
-should be processed immediately by the current participant. When the message is
-a paxos message only the leader of the paxos consensus will actually enqueue the
+will either be paxos messages that should be enqueued into paxos and distributed
+to be processed by the participants or immediate messages that should be
+processed immediately by the current participant. When the message is a paxos
+message only the leader of the paxos consensus will actually enqueue the
 messages for distribution.
 
-The messages queued into paxos have a series of request messages and a series of
-response messages. Each message in either series is addressed to one or specific
-buckets addressed by instance address and bucket index. We do not use Compassion
-response messages, but we do use broadcast and response (i.e. map and reduce) to
-know that everyone has received the message. Thus, each message we send out we
-we are guaranteed to get a response. When we send a message we specify the
-actions to take on receipt and response.
+TODO Realizing that we have a problem with broadcasts and with the Compassion
+model. If we want to run an appointment through the phaser, and one of the
+machines is down, we're going to block advancement of the atomic log and we're
+not going to receive the depature message necessary to free the phaser from
+retrying the departed instance. This is an interesting and unexpected case.
 
-Four the rest of this document I'm going to refer to this as a broadcast. Or
-I'll try. We'll see what best describes it.
+We're going to have to duplicate the countdown built into Compassion, or else
+we're going to have to redesign it. Are we ever going to want to block the
+advancement of the atomic log? Maybe, probably. Seems like we'd want to block it
+here for depart.
+
+This gives us too much to think about for the general cases of possible future
+Compassion applications, but for our current application we know that during the
+good times we are processing a single broadcast at a time.
+
+Wait, if depart blocks, then while we are trying to react to one depature, we're
+not able to deal with a subsequent departure. Maybe departure has to
+introduce...  Done. Delete this TODO. We have a new Compassion now.
+
+Sympatico uses map/reduce to track operations. When we send out a message we
+await a response from all participants in order to determine that it has been
+completed. We're going to call this a map/reduce and say that we send a message
+to be mapped and act upon reduce. Kind of convoluted, but hopefully it will be
+consistent through the rest of this doucment.
 
 TODO Not sure how to process messages in our distributor though when they are
 not address. The distributor needs to know that the message was handled so it
