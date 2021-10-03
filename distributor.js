@@ -14,10 +14,55 @@ class Distributor {
         this.instances = []
         this.departed = []
         this.series = [ 0 ]
+        this.messages = []
         this.buckets = []
+        this.cookie = 0n
         this.distribution = { complete: true, to: [] }
         this.configure({ active, ratio })
         this.events = new Queue
+    }
+
+    configure (configuration) {
+        this.active = coalesce(configuration.active, this.active)
+        this.ratio = coalesce(configuration.ratio, this.ratio)
+    }
+
+    check () {
+        if (this.messages.length != 0) {
+            if (this.messages[0].cookie == '0') {
+                this.messages[0].cookie = String(++this.cookie)
+                this.events.push(this.messages[0])
+            }
+        } else if (this.arrivals.length != 0) {
+            if (this.instances.length == 0) {
+                this.instances.push([ this.arrivals.shift() ])
+                this.buckets = [ new Bucket(this.series, this.promise, 0, 3) ]
+                this.check()
+            } else if (this.departed.length != 0) {
+            }
+        } else if (this.departed.length == 0) {
+            if (this.buckets[0].majority.length == 0) {
+                this.messages.push.apply(this.messages, this.buckets[0].bootstrap({ instances: this.instances, buckets: [ 0 ] }))
+                this.check()
+            } else if (this.buckets[this.buckets.length - 1].majority.length == 0) {
+                for (let i = this.buckets.length - 1; this.buckets[i - 1].majority.length == 0; i--) {
+                    i--
+                }
+                for (I = this.buckets.length; i < I; i++) {
+                    const index = i - this.buckets.length / 2
+                    // TODO Rewrite `Bucket.expand` to simply duplicate its majority.
+                    this.buckets[index].expand(this.instances)
+                }
+            } else if (this.instances.length < this.active) {
+                this.instances.push([ this.arrivals.shift() ])
+                if (this.buckets < this.ratio * this.instances.length) {
+                     const { majoritySize, promise } = this.buckets[0]
+                     const append = this.buckets.map((_, index) => new Bucket(this.series, this.promise, index + this.buckets.length, majoritySize))
+                     this.buckets = this.buckets.concat(append)
+                     this.check()
+                }
+            }
+        }
     }
 
     get status () {
@@ -29,23 +74,22 @@ class Distributor {
         }
     }
 
-    configure (configuration) {
-        this.active = coalesce(configuration.active, this.active)
-        this.ratio = coalesce(configuration.ratio, this.ratio)
-    }
-
     snapshot () {
         return {
-            arrivals: this.arrivals.slice(),
-            instances: this.instances.slice(),
-            departed: this.departed.slice()
+            series: this.series.slice(0),
+            arrivals: this.arrivals.slice(0),
+            instances: this.instances.slice(0),
+            departed: this.departed.slice(0),
+            buckets: this.buckets.map(bucket => bucket.majority)
         }
     }
 
-    join (snapshot) {
+    join (snapshot, promise) {
+        this.series = snapshot.series
         this.arrivals = snapshot.arrivals
         this.instances = snapshot.instances
         this.departed = snapshot.departed
+        this.buckets = snapshot.buckets.map(majority => new Bucket(this.series, promise, 0, 3, majority, snapshot.departed))
     }
 
     arrive (promise, leader) {
@@ -56,21 +100,7 @@ class Distributor {
             this.leader = true
         }
         this.arrivals.push(promise)
-        // If we see the first promise we are bootstrapping.
-        if (promise == '1/0') {
-            this.instances.push([ this.arrivals.shift() ])
-            this.buckets = [ new Bucket(this.series, promise, 0, 3) ]
-            this.stable = false
-            this.distribution = {
-                instances: [[ '1/0' ]],
-                buckets: [ 0 ],
-                departed: []
-            }
-            this.events.push(this.buckets[0].bootstrap(this.distribution))
-        } else if (this.departed.length != 0) {
-        } else if (this.instances.length < this.active) {
-            console.log('EXPAND')
-        }
+        this.check()
     }
 
     request (message) {
@@ -121,6 +151,7 @@ class Distributor {
             }
             break
         }
+        this.check()
     }
 
     depart (promise, departed) {

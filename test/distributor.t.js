@@ -132,11 +132,14 @@ require('proof')(6, okay => {
         okay(distributor.ratio, 4, 'constructor ratio')
         okay(distributor.active, 3, 'constructor maximum')
 
-        distributor.arrive('1/0')
+        distributor.arrive('1/0', '1/0')
 
         const dispatch = shifter.shift()
         okay(dispatch, {
             method: 'paxos',
+            series: 0,
+            index: 0,
+            cookie: '1',
             request: [{
                 method: 'appoint',
                 to: [{ promise: '1/0', index: 0 }],
@@ -146,8 +149,7 @@ require('proof')(6, okay => {
                 method: 'majority',
                 to: [{ promise: '1/0', index: 0 }],
                 majority: [ '1/0' ]
-            }],
-            next: null
+            }]
         }, 'arrive')
 
         distributor.complete(dispatch)

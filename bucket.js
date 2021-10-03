@@ -13,13 +13,13 @@ class Bucket {
         return false
     }
 
-    constructor (series, promise, index, majoritySize) {
+    constructor (series, promise, index, majoritySize, majority = [], departed = []) {
         this.series = series
         this.promise = promise
         this.index = index
         this.majoritySize = majoritySize
-        this.majority = []
-        this.departed = []
+        this.majority = majority
+        this.departed = departed
     }
 
     get status () {
@@ -36,10 +36,11 @@ class Bucket {
         this._strategy = this._strategy.depart(promise)
     }
 
-    bootstrap (options) {
-        const instances = options.instances.concat(options.instances)
-        const index = options.buckets[this.index]
-        const majority = instances.slice(index, index + Math.min(options.instances.length, this.majoritySize))
+    // TODO Strange arguments.
+    bootstrap ({ instances, buckets }) {
+        const siblings = instances.concat(instances)
+        const index = buckets[this.index]
+        const majority = siblings.slice(index, index + Math.min(instances.length, this.majoritySize))
                                   .map(promises => { return { promise: promises[0], index: this.index } })
         return [{
             method: 'paxos',
