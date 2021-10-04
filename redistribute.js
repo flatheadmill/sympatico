@@ -1,7 +1,7 @@
 // Red-black tree for ordered maps.
 const { RBTree } = require('bintrees')
 
-module.exports = function (comparator, instances, buckets) {
+module.exports = function (instances, buckets) {
     buckets = buckets.slice()
     const counted = []
     for (let i = 0; i < instances; i++) {

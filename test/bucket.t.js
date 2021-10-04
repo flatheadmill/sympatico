@@ -1,4 +1,4 @@
-require('proof')(7, async okay => {
+require('proof')(8, async okay => {
     const { Queue } = require('avenue')
     const Bucket = require('../bucket')
     {
@@ -40,11 +40,11 @@ require('proof')(7, async okay => {
                 }],
                 response: [{
                     method: 'majority',
-                    to: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }],
+                    to: [{ promise: '0/0', index: 0 }],
                     majority: [ '1/0', '2/0' ]
                 }, {
                     method: 'majority',
-                    to: [{ promise: '1/0', index: 1 }, { promise: '2/0', index: 1 }],
+                    to: [{ promise: '0/0', index: 1 }],
                     majority: [ '1/0', '2/0' ]
                 }]
             }, {
@@ -107,10 +107,18 @@ require('proof')(7, async okay => {
             }], 'migrate')
             bucket.response(messages[0].response[0])
         }
+        // Null redistribution.
+        {
+            const messages = bucket.migrate({ instances: [[ '1/0' ], [ '2/0' ]], buckets: [ 1, 0 ] })
+            okay(messages, [], 'already balanced')
+        }
         // Departure.
         {
             const dispatch = bucket.depart('2/0')
-            okay(dispatch, [{ method: 'depart', majority: [{ promise: '1/0', index: 0 }] }], 'depart')
+            okay(dispatch, {
+                appointments: [{ index: 0, majority: [{ promise: '1/0', index: 0 }] }],
+                response: [{ method: 'resume', to: [{ promise: '1/0', index: 0 }] }]
+            }, 'depart')
         }
         // Restoration.
         {
@@ -160,6 +168,12 @@ require('proof')(7, async okay => {
             majority: [ '1/0', '3/0', '2/0' ]
         })
         const dispatch = bucket.depart('3/0')
-        okay(dispatch, [], 'would not collapse')
+        okay(dispatch, {
+            appointments: [],
+            response: [{
+                method: 'resume',
+                to: [{ promise: '1/0', index: 1 }]
+            }]
+        }, 'would not collapse')
     }
 })

@@ -74,9 +74,9 @@ class Bucket {
                 method: 'appoint', majority: combined, to: [ combined[0] ]
             }],
             response: [{
-                method: 'majority', to: left, majority: left.map(address => address.promise)
+                method: 'majority', to: [{ promise: '0/0', index: left[0].index }], majority: left.map(address => address.promise)
             }, {
-                method: 'majority', to: right, majority: right.map(address => address.promise)
+                method: 'majority', to: [{ promise: '0/0', index: right[0].index }], majority: right.map(address => address.promise)
             }]
         }, {
             method: 'paxos',
@@ -105,6 +105,9 @@ class Bucket {
         const index = options.buckets[this.index]
         const to = instances.slice(index, index + Math.min(options.instances.length, this.majoritySize))
                             .map(instance => instance[0])
+        if (from.every((promise, index) => to[index] == promise)) {
+            return []
+        }
         const combined = from.concat(to)
         const difference = from.filter(promise => ! to.includes(promise))
                                .map(promise => ({ promise, index: this.index }))
@@ -150,26 +153,50 @@ class Bucket {
         }]
     }
 
+    reinstate (options) {
+        const instances = options.instances.concat(options.instances)
+        const majority = this.majority.map(promise => ({ promise, index: this.index }))
+        return [{
+            method: 'paxos',
+            series: this.series[0],
+            index: this.index,
+            cookie: '0',
+            request: [{
+                method: 'appoint',
+                to: [ majority[0] ],
+                majority: majority
+            }],
+            response: []
+        }]
+    }
+
     depart (promise) {
         this.departed = this.departed.concat(promise)
         const reduced = this.majority.filter(promise => ! this.departed.includes(promise))
         const majority = reduced.map(promise => ({ promise, index: this.index }))
+        const appointments = []
         if (reduced.length != this.majority.length && reduced[0] == this.promise) {
-            return [{ method: 'depart', majority: majority }]
+            appointments.push({ index: this.index, majority: majority })
         }
-        return []
+        return {
+            appointments: appointments,
+            response: [{
+                method: 'resume',
+                to: [ majority[0] ]
+            }]
+        }
     }
 
-    desired (instances) {
+    indexed (instances) {
         return this.majority
             .map(promise => instances.findIndex(promises => promises.includes(promise)))
             .map(index => instances[index][0])
     }
 
     replace (options) {
-        const desired = this.desired(options.instances)
+        const indexed = this.indexed(options.instances)
         const reduced = this.majority.filter(promise => ! this.departed.includes(promise))
-        if (! Bucket.equal(reduced, desired) && reduced[0] == this.promise) {
+        if (! Bucket.equal(reduced, indexed) && reduced[0] == this.promise) {
             return this.migrate(options)
         }
     }

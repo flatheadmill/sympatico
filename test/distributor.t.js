@@ -54,6 +54,9 @@ require('proof')(6, okay => {
 
         arrive () {
             this.machines[this.address] = new Machine(this, String(this.address))
+            if (this.address != 0) {
+                this.machines[this.address].distributor.join(this.machines[0].distributor.snapshot())
+            }
             this.address++
             this.promise = Monotonic.increment(this.promise, 0)
             if (this.promise == '1/0') {
@@ -163,10 +166,17 @@ require('proof')(6, okay => {
 
     okay(network.status, [{
         distributor: {
+            promise: '1/0',
             arrivals: [],
             instances: [[ '1/0' ]],
             departed: [],
-            buckets: [{ majority: [ '1/0' ] }]
+            buckets: [[ '1/0' ]]
         }
     }], 'bootstrapped')
+
+    network.arrive()
+
+    network.drain()
+
+    console.log(require('util').inspect(network.status, { depth: null }))
 })
