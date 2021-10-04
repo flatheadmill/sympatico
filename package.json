@@ -34,7 +34,7 @@
                             "extant":                       "^2.0.0-alpha.2",
                             "hash.fnv":                     "^1.0.7",
                             "keyify":                       "^3.0.0",
-                            "paxos":                        "^19.0.0-alpha.6"
+                            "paxos":                        "^19.0.0-alpha.12"
     },
     "devDependencies":
     {
