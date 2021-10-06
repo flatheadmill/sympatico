@@ -1,4 +1,4 @@
-require('proof')(6, okay => {
+require('proof')(7, okay => {
     const Monotonic = require('paxos/monotonic')
     const Distributor = require('../distributor')
 
@@ -137,6 +137,7 @@ require('proof')(6, okay => {
 
         distributor.arrive('1/0', '1/0')
 
+        okay(shifter.shift(), { method: 'expand', length: 1 }, 'phasers')
         const dispatch = shifter.shift()
         okay(dispatch, {
             method: 'paxos',

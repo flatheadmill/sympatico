@@ -89,6 +89,7 @@ class Distributor {
         } else if (this.instances.length == 0) {
             this.instances.push([ this.arrivals.shift() ])
             this.buckets = [ new Bucket(this.series, this.promise, 0, 3) ]
+            this.events.push({ method: 'expand', length: this.buckets.length })
             this.check()
         // Check for uninitialized buckets.
         } else if (this.buckets.length != 0 && this.buckets[this.buckets.length - 1].majority.length == 0) {
@@ -119,6 +120,7 @@ class Distributor {
                      const { majoritySize, promise } = this.buckets[0]
                      const append = this.buckets.map((_, index) => new Bucket(this.series, this.promise, index + this.buckets.length, majoritySize))
                      this.buckets = this.buckets.concat(append)
+                     this.events.push({ method: 'expand', length: this.buckets.length })
                      this.check()
                 } else {
                     this.instances.push([ this.arrivals.shift() ])

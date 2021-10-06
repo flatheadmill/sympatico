@@ -1,8 +1,9 @@
 require('proof')(5, prove)
 
 function prove (okay) {
+    const { Queue } = require('avenue')
     const Phaser = require('../phaser')
-    const nodes = (new Array(5).fill(null)).map((_, index) => new Phaser(index))
+    const nodes = (new Array(5).fill(null)).map((_, index) => new Phaser(index, new Queue))
     const pulses = nodes.map(node => node.outbox.shifter().sync)
     const logs = nodes.map(node => node.log.shifter().sync)
 
@@ -52,6 +53,7 @@ function prove (okay) {
     okay(shift, {
         method: 'send',
         series: 1,
+        from: 0,
         to: [ 0 ],
         messages: [{
             method: 'reset',
@@ -84,15 +86,17 @@ function prove (okay) {
         method: 'send',
         series: 1,
         to: [ 0 ],
+        from: 0,
         messages: [{ method: 'commit', promise: '1/1/0' }]
     }, 'government commit')
     send(nodes[0], shift)
     okay([
         logs[0].shift(), logs[0].shift(), logs[0].shift()
     ], [{
-        method: 'reset'
+        method: 'reset', address: 0
     }, {
         method: 'government',
+        address: 0,
         stage: 'appoint',
         promise: '1/1/0',
         committed: null,
@@ -108,6 +112,7 @@ function prove (okay) {
         logs[0].shift(), logs[0].shift()
     ], [{
         method: 'entry',
+        address: 0,
         promise: '1/1/1',
         body: 1
     }, null ], 'single write')
@@ -119,10 +124,12 @@ function prove (okay) {
         logs[1].shift(), logs[1].shift(), logs[1].shift(), logs[1].shift()
     ], [{
         method: 'acclimate',
+        address: 1,
         bootstrap: false,
         leader: 0
     }, {
         method: 'government',
+        address: 1,
         promise: '1/2/0',
         committed: null,
         stage: 'appoint',
@@ -131,6 +138,7 @@ function prove (okay) {
         body: { promise: '1/2/0', majority: [ 0, 1 ] }
     }, {
         method: 'entry',
+        address: 1,
         promise: '1/2/1',
         body: 3
     }, null ], 'shift')

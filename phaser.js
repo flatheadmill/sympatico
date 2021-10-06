@@ -10,6 +10,8 @@ const { coalesce } = require('extant')
 // Ever increasing namespaced identifiers.
 const Monotonic = require('paxos/monotonic')
 
+const Keyify = require('keyify')
+
 // We can reused Islander without mapping. We can send a `null` map or otherwise
 // indicate a collapse and Islander will send a message to flush the its queue.
 // But, we'll probably implement napping. It isn't difficult.
@@ -47,14 +49,14 @@ class Phaser extends events.EventEmitter {
     // The `address` locates another participant on the network.
 
     //
-    constructor (address) {
+    constructor (address, log, outbox = new Queue) {
         super()
         // JSON-object opaque address identifying both host and bucket.
         this._address = address
         // Outbox for messages.
-        this.outbox = new Queue
+        this.outbox = outbox
         // Atomic log.
-        this.log = new Queue
+        this.log = log
         // Current first stage of write.
         this._register = null
         // Initial bogus government.
@@ -95,6 +97,7 @@ class Phaser extends events.EventEmitter {
             if (submitted.body.method == 'government') {
                 this.outbox.push({
                     method: 'send',
+                    from: this._address,
                     series: this._series,
                     to: submitted.to,
                     messages
@@ -175,7 +178,7 @@ class Phaser extends events.EventEmitter {
         }
 
         if (messages.length) {
-            this.outbox.push({ method: 'send', series: this._series, to, messages })
+            this.outbox.push({ method: 'send', from: this._address, series: this._series, to, messages })
         }
     }
 
@@ -203,7 +206,7 @@ class Phaser extends events.EventEmitter {
         // will reset ourselves and clear out our `_submitted` poperty.
         if (majority.length == 1) {
             this._committed = null
-            this.log.push({ method: 'reset' })
+            this.log.push({ method: 'reset', address: this._address })
             this._top = { promise: '0/0/0' }
             this.government = {
                 promise: '0/0/0',
@@ -285,19 +288,21 @@ class Phaser extends events.EventEmitter {
                 this.government.majority.length != 1 &&
                 this.government.majority[0] == this._address
             ) {
-                this.log.push({ method: 'snapshot', promise: this.government.promise })
+                this.log.push({ method: 'snapshot', address: this._address, promise: this.government.promise })
             }
             if (this._arriving) {
                 this._arriving = false
                 this.log.push({
                     method: 'acclimate',
+                    address: this._address,
                     bootstrap: this.government.majority.length == 1,
                     leader: this.government.majority[0]
                 })
             }
         }
         this._committed = entry
-        this.log.push(entry.body)
+        console.log('--- yes ---')
+        this.log.push({ address: this._address, ...entry.body })
     }
 
     request (request) {
@@ -359,9 +364,11 @@ class Phaser extends events.EventEmitter {
 
     //
     response (request, responses) {
-        const successful = request.to.filter(to => ! responses[to]).length == 0
+        const successful = request.to.filter(to => ! responses[Keyify.stringify(to)]).length == 0
         if (! successful || request.series != this._series) {
             // TODO Retry message.
+            // TODO No, retry message with any departed members missing from
+            // `to`.
             return false
         }
         // We will only get responses if they are rejections, if the participant
@@ -412,7 +419,7 @@ class Phaser extends events.EventEmitter {
             }
         }
         this._submitIf()
-        return true
+        return null
     }
 
     // TODO This ought to be dead.
