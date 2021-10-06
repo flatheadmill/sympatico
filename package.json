@@ -27,20 +27,20 @@
     },
     "dependencies":
     {
-                            "avenue":                       "^0.6.16",
+                            "avenue":                       "0.6.16",
                             "bintrees":                     "1.0.2",
                             "cubbyhole":                    "4.0.8",
                             "destructible":                 "7.0.0-alpha.70",
-                            "extant":                       "^2.0.0-alpha.4",
-                            "hash.fnv":                     "^1.0.7",
-                            "keyify":                       "^3.0.0",
-                            "paxos":                        "^19.0.0-alpha.12"
+                            "extant":                       "2.0.0-alpha.4",
+                            "hash.fnv":                     "1.0.7",
+                            "keyify":                       "3.0.0",
+                            "paxos":                        "19.0.0-alpha.12"
     },
     "devDependencies":
     {
                             "compassion":                   "2.0.0-alpha.16",
                             "conference":                   "0.27.0-alpha.0",
-                            "proof":                        "^9.0.3"
+                            "proof":                        "9.0.3"
     },
     "main":                 "sympatico",
     "scripts":
