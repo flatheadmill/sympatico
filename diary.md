@@ -1,3 +1,29 @@
+## Thu Oct  7 03:13:20 CDT 2021
+
+Considering reads versus writes. Do they get placed into the same queue so that
+reads and writes occur in the order received? Doesn't seem like it would matter.
+As networked application the reads and writes are not guaranteed to arrive at the
+bucket instance in the order in which the network calls originated in the client
+instances out there in the universe.
+
+But, it does bring up another question. We are not performing the operations the
+moment they are written and we are not performing them synchronously. We are
+placing them in a log so if leadership changes after they are in the log and we
+only perform the operations if we are the leader then we have to include the
+leader in the logged message. We can't use a per-Distributor leadership flag
+because that flag can change after the entry is logged but before the write is
+performed. We have to check for leadership based on which participant was the
+leader when the write was recorded.
+
+The leadership flag is still necessary to determine if the Distributor should
+enqueue generated paxos messages, but that flag is set synchronously, that
+determination is made synchronously. This does not change.
+
+We still get the failed 404 responses if these do not return.
+
+Essentially, I'm not going to worry about ordering for the moment. Not until I
+write an application that depends upon it in some way.
+
 ## Thu Sep  9 13:52:22 CDT 2021
 
 Everyone running at once is too hard to fathom. I don't see how blocking all
