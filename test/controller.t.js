@@ -1,4 +1,4 @@
-require('proof')(2, async okay => {
+require('proof')(3, async okay => {
     const { Future } = require('perhaps')
     const Destructible = require('destructible')
     const { Queue } = require('avenue')
@@ -76,20 +76,13 @@ require('proof')(2, async okay => {
         // that work and the function will be called asynchronously.
 
         //
-        async entry (entry) {
-            switch (entry.method) {
-            case 'put': {
-                    const { key, value } = entry
-                    this.kv[key] = value
-                    return { key, value }
-                }
-                break
-            case 'get': {
-                    return async () => {
-                        return this.kv[entry.key]
-                    }
-                }
+        async write (entry, leader) {
+            const { key, value } = entry
+            this.kv[key] = value
+            if (leader) {
+                return () => ({ key, value })
             }
+            return null
         }
     }
 
@@ -105,7 +98,7 @@ require('proof')(2, async okay => {
 
         static async create (census) {
             const subDestructible = destructible.ephemeral(`compassion.${Participant.count++}`)
-            const sympatico = new Controller(subDestructible.durable('controller'))
+            const sympatico = new Controller(subDestructible.durable('controller'), new KeyValue)
             subDestructible.destruct(() => census.destroy())
             const address = await Compassion.listen(subDestructible, {
                 census: census,
@@ -126,6 +119,9 @@ require('proof')(2, async okay => {
         okay(await participants[0].shifter.join(entry => entry.method == 'entry' && entry.entry.direction == 'reduce'), {
             method: 'entry', entry: { cookie: '1', direction: 'reduce' }
         }, 'bootstrapped')
+
+        const wrote = await participants[0].sympatico.write('x', 1)
+        okay(wrote, { key: 'x', value: 1 }, 'wrote')
 
         // participants[0].sympatico.enqueue('x', { value: 'x' })
 

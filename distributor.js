@@ -211,21 +211,6 @@ class Distributor {
                 this.leader == this.promise == message.leader
             }
             break
-        case 'paxos': {
-                for (const request of message.request) {
-                    for (const to of request.to) {
-                        if (to.promise == this.promise) {
-                            switch (request.method) {
-                            case 'appoint': {
-                                    console.log('>>>> here')
-                                }
-                                break
-                            }
-                        }
-                    }
-                }
-            }
-            break
         }
     }
 
@@ -242,13 +227,6 @@ class Distributor {
                             }
                         }
                     }
-                }
-            }
-            break
-        case 'advance': {
-                const index = message.index + 1
-                if (index > buckets.length) {
-                    this.stable = true
                 }
             }
             break

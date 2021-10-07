@@ -301,7 +301,6 @@ class Phaser extends events.EventEmitter {
             }
         }
         this._committed = entry
-        console.log('--- yes ---')
         this.log.push({ address: this._address, ...entry.body })
     }
 
