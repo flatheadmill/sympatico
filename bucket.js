@@ -40,7 +40,9 @@ class Bucket {
             }],
             response: majority.map(address => {
                 return { method: 'majority', to: majority, majority: majority.map(address => address.promise) }
-            })
+            }).concat(majority.map(address => {
+                return { method: 'resume', to: majority }
+            }))
         }]
     }
 

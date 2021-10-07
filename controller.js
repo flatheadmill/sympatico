@@ -1,6 +1,5 @@
 const Conference = require('conference')
 
-const Keyify = require('keyify')
 const { Queue } = require('avenue')
 const { Future } = require('perhaps')
 
@@ -62,7 +61,7 @@ class Controller {
                     break
                 case 'expand': {
                         while (this.phasers.length < event.length) {
-                            this.phasers.push(new Phaser(this.phasers.length, this.distributor.events, this.outbox))
+                            this.phasers.push(new Phaser({ promise: this.promise, index: this.phasers.length }, this.distributor.events, this.outbox))
                         }
                     }
                     break
@@ -86,12 +85,12 @@ class Controller {
                             // TODO Consider some sort of URL or otherwise parsed format for
                             // addresses used across application. i.e. `2/0?5`
                             // i.e. [ promise, index ] = address.split('?')
-                            responses[Keyify.stringify(to)] = this.phasers[to.index].request(JSON.parse(JSON.stringify(request)))
+                            responses[`${to.promise}?${to.index}`] = this.phasers[to.index].request(JSON.parse(JSON.stringify(request)))
                         } else {
                             throw new Error
                         }
                     }
-                    request = this.phasers[message.from].response(message, responses)
+                    request = this.phasers[message.address.index].response(message, responses)
                 }
             }
         })
@@ -160,6 +159,10 @@ class Controller {
                     if (to.promise == '0/0' || to.promise == this.promise) {
                         switch (response.method) {
                         case 'majority': {
+                            }
+                            break
+                        case 'resume': {
+                                this.phasers[to.index].resume()
                             }
                             break
                         default: throw new Error
