@@ -46,13 +46,20 @@ const Keyify = require('keyify')
 
 //
 class Phaser extends events.EventEmitter {
+    // Test two arrival promise and bucket index pairs for equality.
+
+    //
+    static equal (left, right) {
+        return left.promise == right.promise && left.index == right.index
+    }
+
     // The `address` locates another participant on the network.
 
     //
     constructor (address, log, outbox = new Queue) {
         super()
-        // JSON-object opaque address identifying both host and bucket.
-        this._address = address
+        // An arrival promise and bucket index pair.
+        this.address = address
         // Outbox for messages.
         this.outbox = outbox
         // Atomic log.
@@ -71,16 +78,17 @@ class Phaser extends events.EventEmitter {
         this._next = 0n
         // Queue of writes to submit.
         this._writes = []
+        this._backlog = []
         // Whether we've just arrived and require acclimation.
         this._arriving = false
         // Pause when we fail to send, caller will resume us.
         this.paused = false
-        // Current submission into the atomic log.
-        this._submitted = null
+        // Current submissions into the atomic log.
+        this._submitted = []
         // Last message added to the atomic log.
         this._committed = null
-        this._series = 0
-        this._promise = '0/0'
+        // Last used entry id.
+        this._promise = '0/0/0'
     }
 
     _submit () {
@@ -91,14 +99,13 @@ class Phaser extends events.EventEmitter {
         // outstanding write is a government, in which case we want it to be
         // resolved before we start sending new messages.
 
-        if (this._submitted != null) {
-            const submitted = this._submitted
+        if (this._submitted.length != 0) {
+            const submitted = this._submitted[0]
             messages.push({ method: 'commit', promise: submitted.body.promise })
             if (submitted.body.method == 'government') {
                 this.outbox.push({
                     method: 'send',
-                    from: this._address,
-                    series: this._series,
+                    address: this.address,
                     to: submitted.to,
                     messages
                 })
@@ -124,24 +131,16 @@ class Phaser extends events.EventEmitter {
             switch (write.method) {
             case 'government': {
                     this._promise = write.government.promise
-                    const map = {}
-                    for (const write of this._writes) {
-                        const promise = this._promise = Monotonic.increment(this._promise, 2)
-                        map[write.promise] = promise
-                        write.promise = promise
-                    }
                     // TODO Not sure why we need a separate 'reset' message. Also, how
-                    // are the registerts nesting? It looks as though they are
+                    // are the registers nesting? It looks as though they are
                     // overwriting and therefore losing history.
                     messages.push({
                         method: 'reset',
                         government: JSON.parse(JSON.stringify(this.government)),
                         top: JSON.parse(JSON.stringify(this._top)),
                         committed: this._committed,
-                        register: coalesce(this._submitted, this._register, this._committed),
-                        arrivals: write.to.filter(to => {
-                            return ! ~this.government.majority.indexOf(to)
-                        })
+                        register: coalesce(this._submitted[0], this._register, this._committed),
+                        arrivals: write.to.filter(to => ! this.government.majority.find(promise => Phaser.equal(to, promise)))
                     }, {
                         method: 'write',
                         to: to.slice(),
@@ -150,10 +149,7 @@ class Phaser extends events.EventEmitter {
                             stage: write.stage,
                             promise: write.promise,
                             committed: this._committed,
-                            map: map,
-                            arrivals: write.to.filter(to => {
-                                return ! ~this.government.majority.indexOf(to)
-                            }),
+                            arrivals: write.to.filter(to => ! this.government.majority.find(promise => Phaser.equal(to, promise))),
                             body: write.government
                         }
                     })
@@ -172,41 +168,49 @@ class Phaser extends events.EventEmitter {
                 }
                 break
             }
-            this._submitted = messages[messages.length - 1]
+            this._submitted.push(messages[messages.length - 1])
         } else {
             to.push.apply(to, this.government.majority)
         }
 
         if (messages.length) {
-            this.outbox.push({ method: 'send', from: this._address, series: this._series, to, messages })
+            this.outbox.push({ method: 'send', address: this.address, to, messages })
         }
     }
 
     _submitIf () {
-        if (! this.paused && this._submitted == null) {
+        if (this._submitted.length == 0) {
             this._submit()
         }
     }
 
+    // Appointment pauses the phaser so that user messages are placed in a
+    // blacklog and processed when the phaser gets an explicit resume. We place
+    // the new government at the end of the queue so that all the existing
+    // entries with assigned promises based on the previous goverment are
+    // written before the new government.
+
+    // While we wait for the new government, there may be a departure that will
+    // generate an emergency government. This subsequent appointment will get
+    // appended to the queue and run immediately after the existing government.
+
+    // We do not control unpausing, i.e. resuming within the phaser. It is
+    // controlled from outside the phaser.
+
+    //
     appoint (promise, majority) {
         // If we are bootstrapping, we simply get things rolling by sending the
         // government to ourselves.
 
-        // TODO Race where we have an abdication that fails because of the loss
-        // of a participant and then the fixed government comes in and gets
-        // unshifted, a government in flight and one unshifted. Or waiting for
-        // the end of a commit, then an abdication gets unshifted followed by an
-        // usurpation both enqueued.
-        if (this._writes.length != 0 && this._writes[0].method == 'government') {
-            this._writes.shift()
-        }
+        this.paused = true
+
         // If we are we are bootstrapping, so we cheat and make the bogus first
         // government a majority of us alone so we send the initial government
         // to ourselves. We don't leave the majority empty because otherwise we
         // will reset ourselves and clear out our `_submitted` poperty.
         if (majority.length == 1) {
             this._committed = null
-            this.log.push({ method: 'reset', address: this._address })
+            this.log.push({ method: 'reset', address: this.address })
             this._top = { promise: '0/0/0' }
             this.government = {
                 promise: '0/0/0',
@@ -216,18 +220,17 @@ class Phaser extends events.EventEmitter {
         const combined = majority.slice()
         if (this.government.majority.length < majority.length) {
             combined.push.apply(combined, this.government.majority.filter(address => {
-                return !~combined.indexOf(address)
+                return !~combined.find(existing => Phaser.equal(existing, address))
             }))
         }
-        this._series++
-        this._writes.unshift({
+        this._writes.push({
             to: majority,
             method: 'government',
             stage: 'appoint',
-            promise: promise + '/0',
-            government: { promise: promise + '/0', majority: combined }
+            promise: `${promise}/0`,
+            government: { promise: `${promise}/0`, majority: combined }
         })
-        this._actuallySubmit()
+        this._submitIf()
     }
 
     // Hold onto this thought, we really want to explicitly reset instances so
@@ -274,34 +277,37 @@ class Phaser extends events.EventEmitter {
         // therefore be stale. There's no way to explicitly exclude, because we
         // can abandon an on-boarding.
         const { promise } = entry.body
-        if (entry.body.method == 'government') {
-            const { register, body: government } = entry.body
-            if (register != null) {
-                this._commit(now, register, top)
+        if (Monotonic.compare(this._top.promise, promise) < 0) {
+            if (entry.body.method == 'government') {
+                const { register, body: government } = entry.body
+                if (register != null) {
+                    this._commit(now, register, top)
+                }
+                entry.body.committed = null
+                const compare = Monotonic.compare(government.promise, this.government.promise)
+                assert(compare >= 0)
+                this._top.promise = government.promise
+                this.government = government
+                if (
+                    this.government.majority.length != 1 &&
+                    this.government.majority[0] == this._address
+                ) {
+                    this.log.push({ method: 'snapshot', address: this.address, promise: this.government.promise })
+                }
+                if (this._arriving) {
+                    this._arriving = false
+                    this.log.push({
+                        method: 'acclimate',
+                        address: this.address,
+                        bootstrap: this.government.majority.length == 1,
+                        leader: this.government.majority[0]
+                    })
+                }
             }
-            entry.body.committed = null
-            const compare = Monotonic.compare(government.promise, this.government.promise)
-            assert(compare >= 0)
-            this._top.promise = government.promise
-            this.government = government
-            if (
-                this.government.majority.length != 1 &&
-                this.government.majority[0] == this._address
-            ) {
-                this.log.push({ method: 'snapshot', address: this._address, promise: this.government.promise })
-            }
-            if (this._arriving) {
-                this._arriving = false
-                this.log.push({
-                    method: 'acclimate',
-                    address: this._address,
-                    bootstrap: this.government.majority.length == 1,
-                    leader: this.government.majority[0]
-                })
-            }
+            this._committed = entry
+            this._top.promise = promise
+            this.log.push({ address: this.address, ...entry.body })
         }
-        this._committed = entry
-        this.log.push({ address: this._address, ...entry.body })
     }
 
     request (request) {
@@ -332,12 +338,12 @@ class Phaser extends events.EventEmitter {
                 this._commit(0, write, this._top)
                 break
             case 'reset':
-                if (~message.arrivals.indexOf(this._address)) {
+                if (message.arrivals.find(address => Phaser.equal(address, this.address)) != null) {
                     this.government = message.government
                     this._top = message.top
                     this._committed = message.committed
                     this._arriving = true
-                    this._submitted = null
+                    this._submitted.length = 0
                 } else if (message.register != null) {
                     this._commit(0, message.register, this._top)
                 }
@@ -363,8 +369,8 @@ class Phaser extends events.EventEmitter {
 
     //
     response (request, responses) {
-        const successful = request.to.filter(to => ! responses[Keyify.stringify(to)]).length == 0
-        if (! successful || request.series != this._series) {
+        const successful = request.to.filter(to => ! responses[`${to.promise}?${to.index}`]).length == 0
+        if (! successful) {
             // TODO Retry message.
             // TODO No, retry message with any departed members missing from
             // `to`.
@@ -397,15 +403,14 @@ class Phaser extends events.EventEmitter {
         for (const message of request.messages) {
             switch (message.method) {
             case 'commit': {
-                    assert.notEqual(this._submitted, null)
-                    const submitted = this._submitted
-                    this._submitted = null
+                    assert.notEqual(this._submitted.length, 0)
+                    const submitted = this._submitted.shift()
                     assert.deepEqual(message, { method: 'commit', promise: submitted.body.promise })
                 }
                 break
             case 'write': {
-                    assert.notEqual(this._submitted, null)
-                    const submitted = this._submitted
+                    assert.notEqual(this._submitted.length, 0)
+                    const submitted = this._submitted[0]
                     const { method, promise } = message.body
                     assert.deepEqual({ method, to: request.to, promise }, {
                         to: submitted.to,
@@ -421,17 +426,28 @@ class Phaser extends events.EventEmitter {
         return null
     }
 
-    // TODO This ought to be dead.
+    // Phaser has no idea if it is the leader and if it should enqueue.
     resume () {
         this.paused = false
-        this._submitIf()
+        for (const message of this._backlog) {
+            this.enqueue(message)
+        }
     }
 
+    // TODO Doubt that maintaining a promise is all that important anymore. We
+    // won't be able to return th promise so the caller is going to have to use
+    // a cookie of their own devising.
     enqueue (message) {
-        const promise = this._promise = Monotonic.increment(this._promise, 2)
-        this._writes.push({ method: 'write', promise: promise, body: message })
-        this._submitIf()
-        return promise
+        if (this.paused) {
+            this._backlog.push(message)
+        } else {
+            // TODO Starts to make sense to index little-endian. Specific
+            // applications will know whether the depth, but general applications
+            // will merely want to increment by one.
+            const promise = this._promise = Monotonic.increment(this._promise, 2)
+            this._writes.push({ method: 'write', promise: promise, body: message })
+            this._submitIf()
+        }
     }
 }
 
