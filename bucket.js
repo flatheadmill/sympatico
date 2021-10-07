@@ -22,20 +22,6 @@ class Bucket {
         this.departed = departed
     }
 
-    get status () {
-        return {
-            majority: this.majority.slice(0)
-        }
-    }
-
-    get stable () {
-        return this._strategy.stable
-    }
-
-    depart (promise) {
-        this._strategy = this._strategy.depart(promise)
-    }
-
     // TODO Strange arguments.
     bootstrap ({ instances, buckets }) {
         const siblings = instances.concat(instances)
@@ -199,6 +185,7 @@ class Bucket {
         if (! Bucket.equal(reduced, indexed) && reduced[0] == this.promise) {
             return this.migrate(options)
         }
+        return []
     }
 
     response (message) {

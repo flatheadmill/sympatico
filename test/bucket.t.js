@@ -1,4 +1,4 @@
-require('proof')(8, async okay => {
+require('proof')(10, async okay => {
     const { Queue } = require('avenue')
     const Bucket = require('../bucket')
     {
@@ -158,6 +158,27 @@ require('proof')(8, async okay => {
                 }]
             }], 'restore')
             bucket.response(messages[0].response[0])
+        }
+        // Restoration unnecessary.
+        {
+            const messages = bucket.replace({ instances: [[ '1/0' ], [ '3/0', '2/0' ]], buckets: [ 1, 0 ] })
+            okay(messages, [], 'restoration unnecessary')
+        }
+        // Reinstatement.
+        {
+            const messages = bucket.reinstate({ instances: [[ '1/0' ], [ '3/0', '2/0' ]] })
+            okay(messages, [{
+                method: 'paxos',
+                series: 0,
+                index: 0,
+                cookie: '0',
+                request: [{
+                    method: 'appoint',
+                    to: [{ promise: '3/0', index: 0 }],
+                    majority: [{ promise: '3/0', index: 0 }, { promise: '1/0', index: 0 }]
+                }],
+                response: []
+            }], 'reinstate')
         }
     }
     {
