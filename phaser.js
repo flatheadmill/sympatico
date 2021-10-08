@@ -1,51 +1,29 @@
 // Node.js API.
 const assert = require('assert')
-const events = require('events')
 
-// An async/await queue.
+// An async/await multiplexed event queue.
 const { Queue } = require('avenue')
 
+// Return the first value that is not null-like.
 const { coalesce } = require('extant')
 
 // Ever increasing namespaced identifiers.
 const Monotonic = require('paxos/monotonic')
 
-const Keyify = require('keyify')
+// Implements a two-phase commit with some paxos-like charactistics. Those
+// characterists being that We use a promise derived from the paxos promise to
+// provide a series number that increments by one, and to prevent the leader of
+// a stale goverment from making progress.
 
-// We can reused Islander without mapping. We can send a `null` map or otherwise
-// indicate a collapse and Islander will send a message to flush the its queue.
-// But, we'll probably implement napping. It isn't difficult.
-
-// This algorithm will be run per-bucket. There are no buckets within the
-// consensus algorithm. Each bucket runs an independent instance of the
-// consensus algorithm.
-
-// TODO At some point we decided that we are going to maintain a government
-// number somehow so that the address has only two parts consistent with Paxos.
-// We can maintain this externally in our Paxos algorithm by incrementing a
-// government number. We can do it per bucket, but the government number simply
-// needs to be ever increasing, so it could be a single counter.
-
-// TODO When we usurp to rebalance and not as a result of a crash we can easily
-// preserve the submitted messages. In fact, we can be very certain of this by
-// virtue of having the leader abdicate, run a commit to create a new government
-// forwarding all the queued messages with a mapping and then forwarding
-// messages after we've begun our abdication.
-//
-// When we transition leaders the current leader will have a queue of messages
-// for which promises where issued, so that needs to get transferred to the new
-// leader and remapped. We will know definiatively when the abdication takes
-// place so the old leader can forward any incoming messages to the new leader.
-// The new leader can keep a staging queue of these incoming messages and
-// process them once it assumes leadership.
-//
-// Abdicate and usurp being separate seems like more work, but it probably
-// isn't. At the same time abdicate seems like it is easier to reason about
-// pushing the queue than pulling the queue, but it probably isn't. Streaming
-// the queue is a problem for the network implementation.
+// Otherwise we are counting on the Distributor and the Buckets to generate the
+// right majority in the right order. Majority is at this point a misnomer,
+// since there is no voting in this implementation, but I've not yet come up
+// with a better name. Perhaps `replicas`? Promise is also a misnomer because
+// we're not returning the promise to a participant. It is really a series
+// number. So perhaps we should call it `series`?
 
 //
-class Phaser extends events.EventEmitter {
+class Phaser {
     // Test two arrival promise and bucket index pairs for equality.
 
     //
@@ -57,7 +35,6 @@ class Phaser extends events.EventEmitter {
 
     //
     constructor (address, log, outbox = new Queue) {
-        super()
         // An arrival promise and bucket index pair.
         this.address = address
         // Outbox for messages.
@@ -93,8 +70,7 @@ class Phaser extends events.EventEmitter {
         // If we have a write outstanding, we will add a commit message and have
         // it ride the pulse for our new write unless, of course, the
         // outstanding write is a government, in which case we want it to be
-        // resolved before we start sending new messages.
-
+        // committed before we start sending new messages.
         if (this._submitted.length != 0) {
             const submitted = this._submitted[0]
             messages.push({ method: 'commit', promise: submitted.body.promise })
@@ -111,8 +87,8 @@ class Phaser extends events.EventEmitter {
         }
 
         // Same here, if we have a commit going out we don't want to send a
-        // government along as a subsequent write. A new government will have a
-        // different set of addressees.
+        // government along as a subsequent write. A new government will be sent
+        // to a different set of addressees than the previous write.
         if (
             this._writes.length != 0 &&
             (
