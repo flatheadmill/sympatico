@@ -150,7 +150,7 @@ class Controller {
     }
 
     async reduce (reductions) {
-        for (const reduction of reductions.filter(reduction => reduction != null)) {
+        for (const reduction of reductions) {
             this.distributor.response(reduction.map)
             for (const response of reduction.map.response) {
                 for (const to of response.to) {
@@ -196,7 +196,7 @@ class Controller {
             }
             break
         case 'reduce': {
-                this.reduce([ this.conference.reduce(self.arrived, entry.cookie, null) ])
+                this.reduce(this.conference.reduce(self.arrived, entry.cookie, null))
             }
             break
         }
