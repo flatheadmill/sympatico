@@ -35,7 +35,7 @@
                             "hash.fnv":                     "1.0.9",
                             "keyify":                       "3.0.0",
                             "paxos":                        "19.0.0-alpha.15",
-                            "reactor":                      "17.0.0-alpha.13"
+                            "reactor":                      "17.0.0-alpha.14"
     },
     "devDependencies":
     {
