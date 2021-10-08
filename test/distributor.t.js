@@ -153,6 +153,9 @@ require('proof')(7, okay => {
                 method: 'majority',
                 to: [{ promise: '1/0', index: 0 }],
                 majority: [ '1/0' ]
+            }, {
+                method: 'resume',
+                to: [{ promise: '1/0', index: 0 }],
             }]
         }, 'arrive')
 
