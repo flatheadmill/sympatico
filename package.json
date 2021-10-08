@@ -39,7 +39,7 @@
     },
     "devDependencies":
     {
-                            "compassion":                   "2.0.0-alpha.17",
+                            "compassion":                   "2.0.0-alpha.19",
                             "conference":                   "0.27.0-alpha.1",
                             "proof":                        "9.0.3"
     },
