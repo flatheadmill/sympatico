@@ -63,28 +63,18 @@ function prove (okay) {
     let shift = nodes['1/0?0'].pulse.shift()
     okay(shift, {
         method: 'send',
+        promise: '0/0/0',
         address: { promise: '1/0', index: 0 },
         to: [{ promise: '1/0', index: 0 }],
         messages: [{
-            method: 'reset',
-            government: { promise: '0/0/0', majority: [{ promise: '1/0', index: 0 }] },
-            top: { promise: '0/0/0' },
-            committed: null,
-            register: null,
-            arrivals: []
-        }, {
             method: 'write',
             to: [{ promise: '1/0', index: 0 }],
             body: {
-                method: 'government',
+                method: 'appoint',
                 promise: '1/1/0',
-                committed: null,
-                stage: 'appoint',
-                arrivals: [],
-                body: {
-                    promise: '1/1/0',
-                    majority: [{ promise: '1/0', index: 0 }]
-                }
+                register: null,
+                arrivals: [{ promise: '1/0', index: 0 }],
+                majority: [{ promise: '1/0', index: 0 }]
             }
         }]
     }, 'government')
@@ -93,6 +83,7 @@ function prove (okay) {
     shift = nodes['1/0?0'].pulse.shift()
     okay(shift, {
         method: 'send',
+        promise: '0/0/0',
         to: [{ promise: '1/0', index: 0 }],
         address: { promise: '1/0', index: 0 },
         messages: [{ method: 'commit', promise: '1/1/0' }]
@@ -107,16 +98,13 @@ function prove (okay) {
     ], [{
         method: 'reset', address: { promise: '1/0', index: 0 }
     }, {
-        method: 'government',
+        method: 'appoint',
         address: { promise: '1/0', index: 0 },
-        stage: 'appoint',
         promise: '1/1/0',
-        committed: null,
-        arrivals: [],
-        body: {
-            promise: '1/1/0',
-            majority: [{ promise: '1/0', index: 0 }]
-        }
+        register: null,
+        arrivals: [{ promise: '1/0', index: 0 }],
+        promise: '1/1/0',
+        majority: [{ promise: '1/0', index: 0 }]
     }, null ], 'bootstrap commit')
     nodes['1/0?0'].phaser.resume()
     sendAll()
@@ -134,20 +122,15 @@ function prove (okay) {
     nodes['1/0?0'].phaser.appoint('1/2', [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }])
     sendAll()
     okay([
-        nodes['2/0?0'].log.shift(), nodes['2/0?0'].log.shift(), nodes['2/0?0'].log.shift()
+        nodes['2/0?0'].log.shift(), nodes['2/0?0'].log.shift()
     ], [{
-        method: 'acclimate',
-        address: { promise: '2/0', index: 0 },
-        bootstrap: false,
-        leader: { promise: '1/0', index: 0 }
-    }, {
-        method: 'government',
-        stage: 'appoint',
+        method: 'appoint',
         address: { promise: '2/0', index: 0 },
         promise: '1/2/0',
-        committed: null,
+        register: null,
         arrivals: [{ promise: '2/0', index: 0 }],
-        body: { promise: '1/2/0', majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }] }
+        promise: '1/2/0',
+        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
     }, null ], 'shift')
     return
 }

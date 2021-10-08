@@ -67,20 +67,14 @@ class Phaser extends events.EventEmitter {
         // Current first stage of write.
         this._register = null
         // Initial bogus government.
-        this.government = {
-            promise: '0/0',
-            majority: []
-        }
+        this.government = { promise: '0/0/0', majority: [] }
         // External Paxos promise and internal series number of most recent
         // message received.
-        this._top = { promise: '0/0/0' }
-        // Next message in series.
-        this._next = 0n
+        this._topmost = '0/0/0'
         // Queue of writes to submit.
         this._writes = []
+        // Paused messages.
         this._backlog = []
-        // Whether we've just arrived and require acclimation.
-        this._arriving = false
         // Pause when we fail to send, caller will resume us.
         this.paused = false
         // Current submissions into the atomic log.
@@ -89,6 +83,8 @@ class Phaser extends events.EventEmitter {
         this._committed = null
         // Last used entry id.
         this._promise = '0/0/0'
+        // We use this to kinda-paxos our way out of race conditions.
+        this._appointment = '0/0/0'
     }
 
     _submit () {
@@ -102,9 +98,10 @@ class Phaser extends events.EventEmitter {
         if (this._submitted.length != 0) {
             const submitted = this._submitted[0]
             messages.push({ method: 'commit', promise: submitted.body.promise })
-            if (submitted.body.method == 'government') {
+            if (submitted.body.method == 'appoint') {
                 this.outbox.push({
                     method: 'send',
+                    promise: this.government.promise,
                     address: this.address,
                     to: submitted.to,
                     messages
@@ -113,10 +110,6 @@ class Phaser extends events.EventEmitter {
             }
         }
 
-        return this._actuallySubmit(messages, to)
-    }
-
-    _actuallySubmit (messages = [], to = []) {
         // Same here, if we have a commit going out we don't want to send a
         // government along as a subsequent write. A new government will have a
         // different set of addressees.
@@ -129,28 +122,17 @@ class Phaser extends events.EventEmitter {
             const write = this._writes.shift()
             to.push.apply(to, write.to || this.government.majority)
             switch (write.method) {
-            case 'government': {
+            case 'appoint': {
                     this._promise = write.government.promise
-                    // TODO Not sure why we need a separate 'reset' message. Also, how
-                    // are the registers nesting? It looks as though they are
-                    // overwriting and therefore losing history.
                     messages.push({
-                        method: 'reset',
-                        government: JSON.parse(JSON.stringify(this.government)),
-                        top: JSON.parse(JSON.stringify(this._top)),
-                        committed: this._committed,
-                        register: coalesce(this._submitted[0], this._register, this._committed),
-                        arrivals: write.to.filter(to => ! this.government.majority.find(promise => Phaser.equal(to, promise)))
-                    }, {
                         method: 'write',
                         to: to.slice(),
                         body: {
-                            method: 'government',
-                            stage: write.stage,
+                            method: 'appoint',
                             promise: write.promise,
-                            committed: this._committed,
+                            register: write.usurp ? coalesce(this._register, this._committed) : null,
                             arrivals: write.to.filter(to => ! this.government.majority.find(promise => Phaser.equal(to, promise))),
-                            body: write.government
+                            majority: write.government.majority
                         }
                     })
                 }
@@ -174,7 +156,13 @@ class Phaser extends events.EventEmitter {
         }
 
         if (messages.length) {
-            this.outbox.push({ method: 'send', address: this.address, to, messages })
+            this.outbox.push({
+                method: 'send',
+                to: to,
+                promise: this.government.promise,
+                address: this.address,
+                messages: messages
+            })
         }
     }
 
@@ -197,6 +185,12 @@ class Phaser extends events.EventEmitter {
     // We do not control unpausing, i.e. resuming within the phaser. It is
     // controlled from outside the phaser.
 
+    // Appointments are always based on either an existing leader expanding or
+    // else an existing member usurping. If we are usurping we will include a
+    // `register` property which contains the last register value or the last
+    // commit value. Except for bootstrap appointments will always be invoked on
+    // a phaser that is actively paritcipating.
+
     //
     appoint (promise, majority) {
         // If we are bootstrapping, we simply get things rolling by sending the
@@ -204,71 +198,53 @@ class Phaser extends events.EventEmitter {
 
         this.paused = true
 
-        // If we are we are bootstrapping, so we cheat and make the bogus first
+        // If true we are usurping the existing government.
+        let usurp = false
+
+        // The new government.
+        const government = {
+            promise: `${promise}/0`,
+            majority: majority
+        }
+
+        // If we are bootstrapping, so we cheat and make the bogus first
         // government a majority of us alone so we send the initial government
         // to ourselves. We don't leave the majority empty because otherwise we
         // will reset ourselves and clear out our `_submitted` poperty.
         if (majority.length == 1) {
-            this._committed = null
             this.log.push({ method: 'reset', address: this.address })
-            this._top = { promise: '0/0/0' }
+            this._topmost = '0/0/0'
+            this._committed = null
+            this._backlog.length = 0
+            this._writes.length = 0
+            this._submitted.length = 0
+            this._appointment = '0/0/0'
             this.government = {
                 promise: '0/0/0',
-                majority: majority
+                majority: []
             }
+        // If we are usurping we set the government now so that the greater
+        // government promise will cause to reject messages from the old leader
+        // if it is still alive somehow.
+        } else if (! Phaser.equal(this.government.majority[0], this.address)) {
+            this.government = government
+            usurp = true
         }
-        const combined = majority.slice()
-        if (this.government.majority.length < majority.length) {
-            combined.push.apply(combined, this.government.majority.filter(address => {
-                return !~combined.find(existing => Phaser.equal(existing, address))
-            }))
-        }
+
         this._writes.push({
             to: majority,
-            method: 'government',
-            stage: 'appoint',
+            method: 'appoint',
             promise: `${promise}/0`,
-            government: { promise: `${promise}/0`, majority: combined }
+            usurp: usurp,
+            government: { promise: `${promise}/0`, majority }
         })
+
         this._submitIf()
     }
 
-    // Hold onto this thought, we really want to explicitly reset instances so
-    // that the hiatus doesn't confuse them, they are leaving so they can reset
-    // themselves when they return, and this can be done by setting boot to '0'.
-
-    // If we tell something they leave, they set boot to zero, but we might have
-    // to rollback before the new government comes into action, and if we do,
-    // we're going to want them to preserve their state so the old leader can
-    // resume. Hmm...
-
-    // Why don't we just assume that joining a government means that the new
-    // leader is going to push our state. Oh, no, because we need to pull the
-    // old state from the old leader.
-
-    // Maybe, instead of keeping a queue internal to the consensus, we submit
-    // one at a time, and read the log. Which means that there is only ever one
-    // message queued. If one of the consensus members drops out the submitting
-    // router will get a failure message and it ran return 503. At that point it
-    // could return 503 for the entire queue, or else wait for the new table.
-
-    // No, the internal queue is good, because it allows us to interleave write
-    // and commit, so we keep that. What we can do is have a rejection queue, so
-    // that we have a log, and if we have our leadership revoked, we can fill
-    // that rejection queue with out queue, and even, in the abstract, have a
-    // rejection reason that could be the new table so we don't have to wait for
-    // it.
-
-    // Ah, but now we are returning to the problem where we are in the middle of
-    // a transition, some consensi have completed and begun processing new
-    // messages, other are still syncing and we have to roll back to an old
-
-    // Okay, but let's keep the rejection queue. We'll know exactly where it
-    // breaks.
-
-    // TODO Now we need a way to give up on syncing in progress, so we should
-    // add a promise to the syncing method. May as well add a series as well, so
-    // we can simplify our `_submit` method, single switch statement.
+    // Commit a message to the log. If it is a government, we will reset our
+    // writes and `backlog if we are not the the leader in the new government,
+    // and we will perform additional resets if we are arriving.
 
     //
     _commit (now, entry, top) {
@@ -277,41 +253,31 @@ class Phaser extends events.EventEmitter {
         // therefore be stale. There's no way to explicitly exclude, because we
         // can abandon an on-boarding.
         const { promise } = entry.body
-        if (Monotonic.compare(this._top.promise, promise) < 0) {
-            if (entry.body.method == 'government') {
-                const { register, body: government } = entry.body
+        if (Monotonic.compare(this._topmost, promise) < 0) {
+            if (entry.body.method == 'appoint') {
+                const { register, majority } = entry.body
                 if (register != null) {
-                    this._commit(now, register, top)
+                    this._commit(now, register)
                 }
-                entry.body.committed = null
-                const compare = Monotonic.compare(government.promise, this.government.promise)
-                assert(compare >= 0)
-                this._top.promise = government.promise
-                this.government = government
+                assert(Monotonic.compare(promise, this.government.promise) >= 0)
+                this.government = { majority, promise }
                 if (
                     this.government.majority.length != 1 &&
-                    this.government.majority[0] == this._address
+                    Phaser.equal(this.government.majority[0], this.address)
                 ) {
                     this.log.push({ method: 'snapshot', address: this.address, promise: this.government.promise })
                 }
-                if (this._arriving) {
-                    this._arriving = false
-                    this.log.push({
-                        method: 'acclimate',
-                        address: this.address,
-                        bootstrap: this.government.majority.length == 1,
-                        leader: this.government.majority[0]
-                    })
-                }
             }
             this._committed = entry
-            this._top.promise = promise
+            this._topmost = promise
             this.log.push({ address: this.address, ...entry.body })
         }
     }
 
     request (request) {
-        const responses = []
+        if (Monotonic.compare(request.promise, this.government.promise) < 0) {
+            return false
+        }
         for (const message of request.messages) {
             // When writing, we check for synchronization during an abdication.
             // A subordinate participant is attempting to take control of the
@@ -319,38 +285,19 @@ class Phaser extends events.EventEmitter {
             // participant is not behind by one in the atomic log.
             switch (message.method) {
             case 'write': {
-                    if (message.body.method == 'government') {
-                        if (message.body.committed == null) {
-                            assert.equal(this._committed, null)
-                        } else if (!~message.body.arrivals.indexOf(this._address)) {
-                            const { committed } = message.body
-                            assert.notEqual(this._committed, null)
-                            // Switching on BigInt literals hurts Istanbul.
-                            this._commit(0, committed, this._top)
-                        }
-                    }
                     this._register = message
                 }
                 break
-            case 'commit':
-                const write = this._register
-                this._register = null
-                this._commit(0, write, this._top)
-                break
-            case 'reset':
-                if (message.arrivals.find(address => Phaser.equal(address, this.address)) != null) {
-                    this.government = message.government
-                    this._top = message.top
-                    this._committed = message.committed
-                    this._arriving = true
-                    this._submitted.length = 0
-                } else if (message.register != null) {
-                    this._commit(0, message.register, this._top)
+            case 'commit': {
+                    assert.equal(this._register.body.promise, message.promise)
+                    const write = this._register
+                    this._register = null
+                    this._commit(0, write)
                 }
                 break
             }
         }
-        return responses
+        return true
     }
 
     //
@@ -375,30 +322,6 @@ class Phaser extends events.EventEmitter {
             // TODO No, retry message with any departed members missing from
             // `to`.
             return false
-        }
-        // We will only get responses if they are rejections, if the participant
-        // is ahead of us in the message log.
-        for (const to in responses) {
-            for (const message of responses[to]) {
-                assert.equal(message.method, 'ahead')
-                const { committed } = message
-                this._commit(0, committed, this._top)
-                const submitted = this._submitted
-                this._submitted = null
-                console.log(request.messages[0])
-                assert.equal(request.messages[0].method, 'reset')
-                this.paused = true
-                this._writes.unshift({
-                    to: submitted.to,
-                    method: 'government',
-                    stage: 'appoint',
-                    promise: submitted.body.promise,
-                    government: request.messages[1].body.body
-                })
-                // TODO Add timestamp.
-                this.outbox.push({ method: 'rejected' })
-                return false
-            }
         }
         for (const message of request.messages) {
             switch (message.method) {
