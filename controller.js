@@ -196,7 +196,7 @@ class Controller {
             }
             break
         case 'reduce': {
-                this.reduce([ this.conference.reduce(from.arrived, entry.cookie, null) ])
+                this.reduce([ this.conference.reduce(self.arrived, entry.cookie, null) ])
             }
             break
         }
