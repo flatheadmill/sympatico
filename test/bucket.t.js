@@ -21,6 +21,9 @@ require('proof')(10, async okay => {
                     method: 'majority',
                     to: [{ promise: '1/0', index: 0 }],
                     majority: [ '1/0' ]
+                }, {
+                    method: 'resume',
+                    to: [{ promise: '1/0', index: 0 }],
                 }]
             }], 'bootstrap')
             bucket.response(messages[0].response[0])

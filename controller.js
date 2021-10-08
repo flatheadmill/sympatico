@@ -25,9 +25,8 @@ class Controller {
         destructible.durable('events', async () => {
             const shifter = this.distributor.events.shifter()
             for await (const event of this.distributor.events.shifter()) {
-                console.log(event)
                 switch (event.method) {
-                case 'government': {
+                case 'appoint': {
                         const response = this._appointments[event.promise.replace(/\/0$/, '')]
                         if (response != null) {
                             response()
@@ -36,7 +35,6 @@ class Controller {
                     break
                 case 'entry': {
                         const entry = event.body
-                        console.log(entry)
                         let result = await this.application.write(entry, this.distributor.leader)
                         if (typeof result == 'function') {
                             result = await result()
