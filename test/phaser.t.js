@@ -1,4 +1,4 @@
-require('proof')(6, prove)
+require('proof')(10, prove)
 
 function prove (okay) {
     const { Queue } = require('avenue')
@@ -17,18 +17,30 @@ function prove (okay) {
         return nodes
     } ()
 
+    const retries = []
+
     function send (from, request, except = []) {
         const responses = {}
         for (const address of request.to) {
             const keyified = `${address.promise}?${address.index}`
             if (!(keyified in responses) && !~except.indexOf(keyified)) {
-                responses[keyified] = nodes[keyified].phaser.request(JSON.parse(JSON.stringify(request)))
+                if (nodes[keyified].departed) {
+                    responses[keyified] = false
+                } else {
+                    responses[keyified] = nodes[keyified].phaser.request(JSON.parse(JSON.stringify(request)))
+                }
             }
         }
-        from.phaser.response(request, responses)
+        const retry = from.phaser.response(request, responses)
+        if (retry != null) {
+            retries.push({ request: retry, node: from })
+        }
     }
 
     function sendAll (except = []) {
+        for (const { node, request } of retries.splice(0)) {
+            send(node, request, [])
+        }
         let advanced = true
         while (advanced) {
             advanced = false
@@ -116,7 +128,6 @@ function prove (okay) {
         promise: '1/1/1',
         body: 1
     }, null ], 'single write')
-    debugger
     nodes['1/0?0'].phaser.enqueue(2)
     nodes['1/0?0'].phaser.enqueue(3)
     nodes['1/0?0'].phaser.appoint('1/2', [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }])
@@ -131,6 +142,59 @@ function prove (okay) {
         arrivals: [{ promise: '2/0', index: 0 }],
         promise: '1/2/0',
         majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }]
-    }, null ], 'shift')
-    return
+    }, null ], 'two participants')
+    nodes['1/0?0'].phaser.appoint('1/3', [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '3/0', index: 0 }])
+    sendAll()
+    okay([
+        nodes['3/0?0'].log.shift(), nodes['3/0?0'].log.shift()
+    ], [{
+        method: 'appoint',
+        address: { promise: '3/0', index: 0 },
+        promise: '1/3/0',
+        register: null,
+        arrivals: [{ promise: '3/0', index: 0 }],
+        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '3/0', index: 0 }]
+    }, null ], 'three participants arrival')
+    okay([
+        nodes['2/0?0'].log.shift(), nodes['2/0?0'].log.shift()
+    ], [{
+        method: 'appoint',
+        address: { promise: '2/0', index: 0 },
+        promise: '1/3/0',
+        register: null,
+        arrivals: [{ promise: '3/0', index: 0 }],
+        majority: [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }, { promise: '3/0', index: 0 }]
+    }, null ], 'three participants other')
+    debugger
+    nodes['1/0?0'].phaser.resume()
+    nodes['3/0?0'].departed = true
+    nodes['1/0?0'].phaser.enqueue(4)
+    sendAll()
+    nodes['1/0?0'].phaser.appoint('4/0', [{ promise: '1/0', index: 0 }, { promise: '2/0', index: 0 }], [ '3/0' ])
+    nodes['1/0?0'].phaser.appoint('5/0', [{ promise: '1/0', index: 0 }], [ '2/0' ])
+    sendAll()
+    sendAll()
+    nodes['1/0?0'].phaser.appoint('6/0', [{ promise: '1/0', index: 0 }, { promise: '4/0', index: 0 }, { promise: '5/0', index: 0 }])
+    sendAll()
+    okay(nodes['1/0?0'].phaser.government, {
+        promise: '6/0/0',
+        majority: [{
+            promise: '1/0', index: 0
+        }, {
+            promise: '4/0', index: 0
+        }, {
+            promise: '5/0', index: 0
+        }]
+    }, 'reexpand')
+    nodes['4/0?0'].phaser.appoint('7/0', [{ promise: '4/0', index: 0 }, { promise: '5/0', index: 0 }], [ '1/0' ])
+    nodes['4/0?0'].phaser.request({ promise: '6/0/0' })
+    sendAll()
+    okay(nodes['4/0?0'].phaser.government, {
+        promise: '7/0/0',
+        majority: [{
+            promise: '4/0', index: 0
+        }, {
+            promise: '5/0', index: 0
+        }]
+    }, 'usurp')
 }

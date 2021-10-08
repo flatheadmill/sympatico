@@ -45,6 +45,8 @@ class Phaser {
         this._register = null
         // Initial bogus government.
         this.government = { promise: '0/0/0', majority: [] }
+        // Instances that have departed.
+        this.departed = []
         // External Paxos promise and internal series number of most recent
         // message received.
         this._topmost = '0/0/0'
@@ -96,7 +98,7 @@ class Phaser {
             )
         ) {
             const write = this._writes.shift()
-            to.push.apply(to, write.to || this.government.majority)
+            to.push.apply(to, (write.to || this.government.majority).filter(address => !~this.departed.indexOf(address.promise)))
             switch (write.method) {
             case 'appoint': {
                     this._promise = write.government.promise
@@ -128,7 +130,7 @@ class Phaser {
             }
             this._submitted.push(messages[messages.length - 1])
         } else {
-            to.push.apply(to, this.government.majority)
+            to.push.apply(to, this.government.majority.filter(address => !~this.departed.indexOf(address.promise)))
         }
 
         if (messages.length) {
@@ -168,10 +170,15 @@ class Phaser {
     // a phaser that is actively paritcipating.
 
     //
-    appoint (promise, majority) {
+    appoint (promise, majority, departed = []) {
+        // Make note of any departed members.
+        this.departed = this.departed.concat(departed)
+        this.departed = this.departed.filter((promise, index) => {
+            return index == this.departed.indexOf(promise)
+        })
+
         // If we are bootstrapping, we simply get things rolling by sending the
         // government to ourselves.
-
         this.paused = true
 
         // If true we are usurping the existing government.
@@ -187,7 +194,7 @@ class Phaser {
         // government a majority of us alone so we send the initial government
         // to ourselves. We don't leave the majority empty because otherwise we
         // will reset ourselves and clear out our `_submitted` poperty.
-        if (majority.length == 1) {
+        if (this.government.majority.length == 0) {
             this.log.push({ method: 'reset', address: this.address })
             this._topmost = '0/0/0'
             this._committed = null
@@ -223,20 +230,39 @@ class Phaser {
     // and we will perform additional resets if we are arriving.
 
     //
-    _commit (now, entry, top) {
+    _commit (now, entry) {
         // If our government has booted, we initialize assuming a series of '0'.
         // We can't trust our own government, we might be rejoining and it would
         // therefore be stale. There's no way to explicitly exclude, because we
         // can abandon an on-boarding.
         const { promise } = entry.body
         if (Monotonic.compare(this._topmost, promise) < 0) {
+            // Appointments mean we have to update the state of the phaser for a
+            // new government.
             if (entry.body.method == 'appoint') {
+                assert(Monotonic.compare(promise, this.government.promise) >= 0)
                 const { register, majority } = entry.body
+                // If the new government is an usurpation, it includes the last
+                // value registered or committed so that we can ensure that we do
+                // not lose a half-written write.
                 if (register != null) {
                     this._commit(now, register)
                 }
-                assert(Monotonic.compare(promise, this.government.promise) >= 0)
+                // Assign the new government.
                 this.government = { majority, promise }
+                // Remove any departed instances that are not referenced by our
+                // majority, we will not be seeing them again.
+                for (let i = 0; i < this.departed.length;) {
+                    debugger
+                    if (! ~this.government.majority.findIndex(address => address.promise == this.departed[i])) {
+                        this.departed.splice(i, 1)
+                    } else {
+                        i++
+                    }
+                }
+                // TODO This is dubious. We can probably determine if we need
+                // snapshots by seeing arrivals and determining that we are the
+                // leader's instance. Let's simplify our log messaging.
                 if (
                     this.government.majority.length != 1 &&
                     Phaser.equal(this.government.majority[0], this.address)
@@ -244,21 +270,22 @@ class Phaser {
                     this.log.push({ method: 'snapshot', address: this.address, promise: this.government.promise })
                 }
             }
+            // Keep the most recent entry in case we usurp.
             this._committed = entry
+            // Note the most recent entry serial number.
             this._topmost = promise
+            // Add the entry to the log.
             this.log.push({ address: this.address, ...entry.body })
         }
     }
 
     request (request) {
+        // Reject message if it is coming from an old leader that is somehow
+        // still alive and sending messages.
         if (Monotonic.compare(request.promise, this.government.promise) < 0) {
             return false
         }
         for (const message of request.messages) {
-            // When writing, we check for synchronization during an abdication.
-            // A subordinate participant is attempting to take control of the
-            // consensus. We need to make sure that the subordinate
-            // participant is not behind by one in the atomic log.
             switch (message.method) {
             case 'write': {
                     this._register = message
@@ -292,13 +319,17 @@ class Phaser {
 
     //
     response (request, responses) {
+        // If we are not successful, try again, but make sure we are not sending
+        // messages to departed instances.
         const successful = request.to.filter(to => ! responses[`${to.promise}?${to.index}`]).length == 0
         if (! successful) {
-            // TODO Retry message.
-            // TODO No, retry message with any departed members missing from
-            // `to`.
-            return false
+            return {
+                ...request,
+                to: request.to.filter(address => !~this.departed.indexOf(address.promise))
+            }
         }
+        // Shift the submission if we have a commit message. Perform
+        // assertions to ensure the message matches phaser state.
         for (const message of request.messages) {
             switch (message.method) {
             case 'commit': {
@@ -311,11 +342,7 @@ class Phaser {
                     assert.notEqual(this._submitted.length, 0)
                     const submitted = this._submitted[0]
                     const { method, promise } = message.body
-                    assert.deepEqual({ method, to: request.to, promise }, {
-                        to: submitted.to,
-                        method: submitted.body.method,
-                        promise: submitted.body.promise
-                    })
+                    assert.deepEqual({ method, promise }, { method: submitted.body.method, promise: submitted.body.promise })
                     this._submit()
                 }
                 break
@@ -325,7 +352,10 @@ class Phaser {
         return null
     }
 
-    // Phaser has no idea if it is the leader and if it should enqueue.
+    // Phaser has no idea when it should resume posting, that is determined
+    // externally.
+
+    //
     resume () {
         this.paused = false
         for (const message of this._backlog) {
