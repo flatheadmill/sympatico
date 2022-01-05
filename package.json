@@ -46,6 +46,6 @@
     "main":                 "sympatico",
     "scripts":
     {
-                            "test": "proof test/*.t.js"
+                            "test": "proof test/*.t.js test/redux/*.t.js"
     }
 }
