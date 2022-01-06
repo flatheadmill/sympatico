@@ -1,7 +1,7 @@
 require('proof')(5, okay => {
     const Log = require('../../redux/log')
     const entries = []
-    const log = new Log(entry => entries.push(entry))
+    const log = new Log(entries)
     log.arrive(0)
     log.push({ version: 0n, node: 0, index: 0, value: 1 })
     log.arrive(1)
@@ -13,7 +13,7 @@ require('proof')(5, okay => {
     log.advance(0, 0n)
     log.advance(1, 0n)
     const replay = []
-    log.replay(1n, 0, 0, entry => replay.push(entry))
+    log.replay(1n, 0, 0, replay)
     okay(replay, [{
         version: 1n, node: 0, index: 1, value: 1
     }, {

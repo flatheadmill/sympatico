@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::VecDeque;
 
 struct Entry {
     version: u64,
@@ -7,18 +8,14 @@ struct Entry {
     value: u32,
 }
 
-struct Log<F>
-    where F: Fn(&Entry),
-{
+struct Log {
     minimum: HashMap<u32, u64>,
     entries: Vec<Entry>,
-    consumer: F,
+    consumer: VecDeque<Entry>,
 }
 
-impl<F> Log<F>
-    where F: Fn(&Entry),
-{
-    pub fn new(consumer: F) -> Log<F> {
+impl Log {
+    pub fn new(consumer: VecDeque<Entry>) -> Log {
         Log {
             minimum: HashMap::new(),
             entries: vec![],
@@ -39,10 +36,11 @@ impl<F> Log<F>
 mod tests {
     use crate::Log;
     use crate::Entry;
+    use std::collections::VecDeque;
 
     #[test]
     fn it_logs() {
-        let mut log = Log::new(|entry| {});
+        let mut log = Log::new(VecDeque::new());
         log.arrive(0);
         log.push(Entry{ version: 0, node: 0, index: 0, value: 0 });
         assert_eq!(1, 1);

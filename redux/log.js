@@ -44,7 +44,7 @@ class Log {
 
     push (entry) {
         this._entries.push(entry)
-        ; (this.consumer)(entry)
+        this.consumer.push(entry)
     }
 
     replay (version, node, index, consumer) {
@@ -63,7 +63,7 @@ class Log {
         i++
         assert(i < this._entries.length)
         for (; i < this._entries.length; i++) {
-            ; (consumer)(this._entries[i])
+            consumer.push(this._entries[i])
         }
     }
 
