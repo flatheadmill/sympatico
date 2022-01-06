@@ -2,9 +2,8 @@ const assert = require('assert')
 
 class Log {
     constructor (consumer) {
-        this._population = null
         this._minimum = new Map
-        this._log = []
+        this._entries = []
         this.consumer = consumer
     }
 
@@ -17,21 +16,21 @@ class Log {
         }
         let i = 0
         for (;;) {
-            assert(i < this._log.length)
-            if (this._log[i].version == min) {
+            assert(i < this._entries.length)
+            if (this._entries[i].version == min) {
                 break
             }
             i++
         }
-        this._log.splice(0, i)
+        this._entries.splice(0, i)
     }
 
     maximum () {
-        return this._log[this._log.length - 1].version
+        return this._entries[this._entries.length - 1].version
     }
 
     minimum () {
-        return this._log[0].version
+        return this._entries[0].version
     }
 
     arrive (id) {
@@ -44,27 +43,27 @@ class Log {
     }
 
     push (entry) {
-        this._log.push(entry)
-        this.consumer.push(entry)
+        this._entries.push(entry)
+        ; (this.consumer)(entry)
     }
 
     replay (version, node, index, consumer) {
         let i = 0
         for (;;) {
-            assert(i < this._log.length)
-            const entry = this._log[i]
-            if (this._log[i].version == version &&
-                this._log[i].node == node &&
-                this._log[i].index == index
+            assert(i < this._entries.length)
+            const entry = this._entries[i]
+            if (this._entries[i].version == version &&
+                this._entries[i].node == node &&
+                this._entries[i].index == index
             ) {
                 break
             }
             i++
         }
         i++
-        assert(i < this._log.length)
-        for (; i < this._log.length; i++) {
-            consumer.push(this._log[i])
+        assert(i < this._entries.length)
+        for (; i < this._entries.length; i++) {
+            ; (consumer)(this._entries[i])
         }
     }
 
