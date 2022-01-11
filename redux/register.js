@@ -37,36 +37,79 @@ class Register {
     // the follower can't catch up to within 256 messages than it is not
     // leadership material.
     //
+    // If our leadership is our majority, we can wait a round. A frame is either
+    // learned when we get it or learned in the next frame. If a peer has not
+    // received a message from a dead peer then their received version for that
+    // peer will not advance. The message for that peer will not have been
+    // learned so we can delete those messages from the frame and learn the
+    // frame.
+    //
+    // If our leadership is a quorum and we're going by a majority of the quorum
+    // then we have more work to do. The advantage of the quorum would be more
+    // writers and a faster response to writes. If our application is across
+    // data centers then each data center having a writer is a benefit, but we
+    // still have to get through one frame to get to the next one, so maybe
+    // three data centers is enough to make a difference. Perhaps it is a
+    // question of topography where you shard two instances of sympatico such
+    // that there is a read center for reporting or monitoring that has a node
+    // from both instances.
+    //
     // The follower can announce its candidacy itself.
     //
     appoint (leaders) {
+        const losers = [ ...leaders ].map(node => ! this._leaders.has(node))
         this._leaders = new Set(leaders)
-        for (const node of this._received.keys()) {
-            if (! this._leaders.has(node)) {
-                this._received.delete(node)
-            }
-        }
-        // TODO Instead of deleting, you need to learn.
-        // TODO Just remember to shrink before we expand.
-        for (const [ version, frame ] of this._frames) {
-            for (const node of frame.keys()) {
-                if (! this._leaders.has(node)) {
-                    frame.messages.delete(node)
-                    frame.receipts.delete(node)
+        if (this._sending) {
+            for (const node in losers) {
+                for (const [ version, frame ] of frames) {
+                    // Not sure if we're going to get a message from someone else
+                    // who is aware of the new leadership before we are.
+                    const leaders = new Set(frame.leaders)
+                    if (! leaders.has(loser)) {
+                        break
+                    }
+                    // If we haven't received a message from a loser, mark that
+                    // message as `null`.
+                    if (! frame.messages.has(node)) {
+                        frame.messages.set(node, null)
+                    }
+                    // Lie about the losers. Pretend they got all all the messages we
+                    // all sent because we don't care about their opinion anyway.
+                    const receipts = frame.receipts.get(node)
+                    for (const node of receipts.keys()) {
+                        receipts.set(node, version)
+                    }
                 }
             }
-        }
-        if (this._sending) {
             this._check()
         }
     }
 
-    _send () {
+    // We send a message. If this is a response to a message from another node,
+    // `node` is the id of the node initiated this frame. We will record its
+    // receipt for the current version.
+    _send (node = null) {
+        // We are now sending.
         this._sending = true
+
+        // Get the current version.
         const version = this._version
+
+        // Splice some messages off our queue if any.
         const messages = this._queue.splice(0, this._maximumMessages)
-        let index = 0
+
+        // We will immediately receive the packet we're about to send before we
+        // process any other responses, so let's mark our receipt of that
+        // message now.
         this._received.set(this._id, version)
+
+        // If this is a response to a message from another node, acknowledge the
+        // receipt of that message.
+        if (node != null) {
+            this._received.set(node, version)
+        }
+
+        // Create a packet to send to all of our peers, but not ourselves.
         const envelope = {
             to: [ ...this._leaders ].filter(node => node != this._id),
             version: version,
@@ -74,12 +117,13 @@ class Register {
             messages: messages,
             receipts: [ ...this._received ]
         }
+
         this._publisher.push(envelope)
         this._frames.set(version, {
             version: version,
             leaders: new Set(this._leaders),
             messages: new Map,
-            receipts: new Map([ ...this._leaders ].map(leader => [ leader, null ]))
+            receipts: new Map
         })
         this.receive(envelope)
     }
@@ -110,31 +154,44 @@ class Register {
 
     //
     _check () {
+        // Get the frame for the current version.
         const frame = this._frames.get(this._version)
-        if (frame.receipts.size == this._leaders.size) {
+
+        // If our leadership shrank, we may have extra messages. If all of the
+        // current leaders have responded, then we have a frame to dispatch to
+        // our consumers.
+        const completed = [ ...frame.messages.keys() ].map(node => {
+            return this._leaders.has(node)
+        }).length == this._leaders.size
+
+        // If we have messages from all the leaders.
+        if (completed) {
+            // Capture the current version and increment to the next.
             const version = this._version++
+
+            // Delete the current frame from the frame map.
             this._frames.delete(version)
-            // We can't do anything until we get the frame in any case. So let's
-            // open our frame here. A log entry includes all the messages sent
-            // by all leaders. We can learn the entry if a majority of leaders
-            // have acknowledge receipt of the version.
-            // TODO Left off here. Create a map of nodes...
+
+            // Update our own set of receipts to reflect messages we received
+            // since we sent our own packet.
             frame.receipts.set(this._id, new Map(this._received))
-            let send = false
+
+            // We can make this take ourselves and have a send regarless
+            // function.
             for (const consumer of this._consumers) {
-                if (!! consumer.push(frame)) {
-                    send = true
-                }
+                consumer.consume(this, frame)
             }
+
+            // We are no longer sending at this point.
             this._sending = false
+
             // Run our backlog through `receive`.
             this._backlog.splice(0).map(packet => this.receive(packet))
-            // If we have not sent because of a backlog, but our last receipt
-            // does not match the current state of received messages, send for
-            // the sake of sending receipts. This will always correctly advance
-            // the frame. If we have a single leader send a message in a frame
-            // the frame will complete when the other leaders ...
-            if (! this._sending && send) {
+
+            // If we have not send because of a backlog, but one of our
+            // consumers wants to send of the sake of receipts, then send.
+            if (! this._sending && this.send) {
+                this.send = false
                 this._send()
             }
         }
@@ -174,15 +231,28 @@ class Register {
         }
     }
 
+    // We may use this to bring a follower on board where it is its own leader
+    // or perhaps the determination is not based on the leader in the object,
+    // but the leaders in the message so that followers are working through the
+    // same logic.
     receive ({ version, node, messages, receipts }) {
+        // If the version is the current version we process it.
         if (version == this._version) {
+            // We may be receiving an incoming message, so we send a message and
+            // prime it with a receipt for the node that called us.
             if (! this._frames.get(version)) {
-                this._send()
+                this._send(node)
             }
+
+            // Record the receipts and messages for the node in the frame.
             const frame = this._frames.get(version)
             frame.receipts.set(node, receipts)
             frame.messages.set(node, messages)
+
+            // Check to see if we are done with the frame.
             this._check()
+        // If the version is greater than the current version we backlog,
+        // otherwise we drop it.
         } else if (version > this._version) {
             // This backlog is all you need to deal with onboarding message
             // overlap. We do not need to handle this between the register and

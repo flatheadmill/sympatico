@@ -4,9 +4,8 @@ require('proof')(2, okay => {
     function createRegister () {
         const publisher = [], log = []
         const register = new Register(registers.length, publisher, [{
-            push (frame) {
+            consume (register, frame) {
                 log.push(frame)
-                return false
             }
         }])
         registers.push({ register, publisher, log: log })
