@@ -1,6 +1,6 @@
 class Promise {
     constructor (id, Date = Date) {
-        this._id = id
+        this.id = id
         this._Date = Date
     }
 
@@ -13,7 +13,7 @@ class Promise {
     }
 
     create () {
-        return [ this._Date.now(), this._id ]
+        return [ this._Date.now(), this.id ]
     }
 }
 
