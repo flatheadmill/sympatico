@@ -1,6 +1,22 @@
+use std::cmp::Ordering::{Less, Equal, Greater};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::rc::Rc;
+
+pub struct Promise {
+    id: u32,
+    generator: fn () -> u32,
+}
+
+impl Promise {
+    // https://users.rust-lang.org/t/three-way-comparison-in-rust/2648
+    pub fn compare(left: [u32; 2], right: [u32; 2]) -> std::cmp::Ordering {
+        return Equal
+    }
+    pub fn create(&self) -> [u32; 2] {
+        [ self.id, (self.generator)() ]
+    }
+}
 
 #[derive(PartialEq, Debug)]
 pub struct Entry {
@@ -87,8 +103,10 @@ impl Log {
 mod tests {
     use crate::Log;
     use crate::Entry;
+    use crate::Promise;
     use std::collections::VecDeque;
     use std::rc::Rc;
+    use std::cmp::Ordering::{Less, Equal, Greater};
 
     #[test]
     fn it_logs() {
@@ -108,5 +126,12 @@ mod tests {
         let mut replay: VecDeque<Rc<Entry>> = VecDeque::new();
         log.replay(1, 0, 0, &mut replay);
         assert_eq!(*replay.pop_front().unwrap(), Entry { version: 1, node: 0, index: 1, value: 2 })
+    }
+
+    #[test]
+    fn is_promises() {
+        let promise = Promise { id: 0, generator: || 0 };
+        assert_eq!(promise.create(), [ 0, 0 ]);
+        assert_eq!(Promise::compare([ 0, 0, ], [ 0, 0 ]), Equal);
     }
 }
