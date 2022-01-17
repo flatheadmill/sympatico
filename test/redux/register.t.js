@@ -41,7 +41,7 @@ require('proof')(2, okay => {
             }
         }
     }
-    registers[0].register.appoint([ 0 ])
+    registers[0].register.grow([ 0 ])
     registers[0].register.enqueue(Buffer.from(JSON.stringify({ a: 1 })))
     console.log(registers[0].publisher)
     okay(dump(registers[0].publisher.splice(0)), [{

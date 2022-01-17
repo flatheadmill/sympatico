@@ -1,3 +1,5 @@
+const assert = require('assert')
+
 class Register {
     constructor (id, publisher, consumers) {
         this._id = id
@@ -20,6 +22,30 @@ class Register {
         if (! this._sending) {
             this._send()
         }
+    }
+
+    // TODO Anything administrative can be built atop our atomic log which will
+    // allow us to keep the register simple. Thus, growing the leadership is a
+    // matter of sending an embaraction message through the atomic log. Each
+    // member will get the message but the atomic log will be processed probably
+    // asynchronously, so that we need to have only one member suggest it, or
+    // else filter out subsequent requests by the cookie.
+    //
+    // Everyone can suggest it and then they can do a reduce where they remove
+    // it once they have joined.
+    //
+    // This would get a new member on boarded, which once reduced we'd have to
+    // check again, or rather once acclimated, we check to see if the member can
+    // be used to grow leadership should the leadership be below the maximum.
+    //
+    // Growth of consensus is a matter of passing the new leadership in a round,
+    // knowing that when the round is over everyone has the same leadership. We
+    // use the atomic log to wait for the leadership change and it has to be
+    // submitted by all members, then we can change leadership further.
+    //
+    // Somehow shrinkage needs to veto this.
+    embark (cookie) {
+        this._queue.push({ method: 'embark', message: cookie })
     }
 
     // On boarding is probably going to be handled between the network and the
@@ -83,6 +109,30 @@ class Register {
             }
             this._check()
         }
+    }
+
+    // Simply set the leaders to the new leaders. Everyone recieves the new
+    // leaders. The new peer will not end up with a broken frame at all. They
+    // will receive all the values for the current frame, possibly with some
+    // approvals that are non-applicable.
+    //
+    // We add a message that states that we've submitted the entry for this
+    // instance, and the atomic log counts down all the entries before
+    // considering submitting another one since everyone will be submitting
+    // this. Speaking in circles.
+    //
+    // Failure while growing is tricky. The frames will stop. There will have to
+    // be a failure frame and that will have to cause our atomic log to stop its
+    // countdown. Countdown becomes complete. We probably have new leadership
+    // queued here so the queue is wiped. The leadership is what it is, so the
+    // atomic log should work from that.
+    grow (leaders) {
+        if (leaders.length == 1) {
+            this._leaders = new Set(leaders)
+        } else {
+            throw new Error
+        }
+        // TODO Assert that you are not shrinking.
     }
 
     // We send a message. If this is a response to a message from another node,
