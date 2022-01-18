@@ -46,6 +46,7 @@ require('proof')(2, okay => {
     console.log(registers[0].publisher)
     okay(dump(registers[0].publisher.splice(0)), [{
         to: [],
+        leaders: [ 0 ],
         version: 0,
         node: 0,
         messages: [{ a: 1 }],

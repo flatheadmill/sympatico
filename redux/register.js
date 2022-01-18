@@ -7,9 +7,9 @@ class Register {
         this._version = 0
         this._sending = false
         this._backlog = true
-        this._leaders = new Set
+        this._leaders = []
+        this._leaership = []
         this._received = new Map
-        this._leaders = new Set
         this._frames = new Map
         this._maximumMessages = 256
         this._publisher = publisher
@@ -82,9 +82,9 @@ class Register {
     //
     // The follower can announce its candidacy itself.
     //
-    appoint (leaders) {
-        const losers = [ ...leaders ].map(node => ! this._leaders.has(node))
-        this._leaders = new Set(leaders)
+    shrink (leaders) {
+        const losers = this._leaders.map(node => !~leaders.indexOf(node))
+        this._leaders = leaders
         if (this._sending) {
             for (const node in losers) {
                 for (const [ version, frame ] of frames) {
@@ -128,9 +128,9 @@ class Register {
     // atomic log should work from that.
     grow (leaders) {
         if (leaders.length == 1) {
-            this._leaders = new Set(leaders)
+            this._leaders = leaders
         } else {
-            throw new Error
+            this._leadership.push(leaders)
         }
         // TODO Assert that you are not shrinking.
     }
@@ -161,7 +161,8 @@ class Register {
 
         // Create a packet to send to all of our peers, but not ourselves.
         const envelope = {
-            to: [ ...this._leaders ].filter(node => node != this._id),
+            to: this._leaders.filter(node => node != this._id),
+            leaders: this._leaders.slice(),
             version: version,
             node: this._id,
             messages: messages,
@@ -171,7 +172,7 @@ class Register {
         this._publisher.push(envelope)
         this._frames.set(version, {
             version: version,
-            leaders: new Set(this._leaders),
+            leaders: this._leaders,
             messages: new Map,
             receipts: new Map
         })
@@ -211,8 +212,8 @@ class Register {
         // current leaders have responded, then we have a frame to dispatch to
         // our consumers.
         const completed = [ ...frame.messages.keys() ].map(node => {
-            return this._leaders.has(node)
-        }).length == this._leaders.size
+            return ~this._leaders.indexOf(node)
+        }).length == this._leaders.length
 
         // If we have messages from all the leaders.
         if (completed) {
@@ -285,9 +286,22 @@ class Register {
     // or perhaps the determination is not based on the leader in the object,
     // but the leaders in the message so that followers are working through the
     // same logic.
-    receive ({ version, node, messages, receipts }) {
+    receive ({ version, node, messages, receipts, leaders }) {
         // If the version is the current version we process it.
         if (version == this._version) {
+            // Here we assume that we will only ever grow.
+            if (leaders.length > this._leaders.length) {
+                if (this._sending) {
+                    this._outbox.push({
+                        to: leaders.filter(id => !~this._leaders.indexOf(id)),
+                        version: version,
+                        node: this._id,
+                        messages: frame.messages.get(this.id),
+                        receipts: [ ...this._received ]
+                    })
+                }
+                this._leaders = leaders
+            }
             // We may be receiving an incoming message, so we send a message and
             // prime it with a receipt for the node that called us.
             if (! this._frames.get(version)) {
