@@ -8,7 +8,7 @@ class Register {
         this._sending = false
         this._backlog = true
         this._leaders = []
-        this._leaership = []
+        this._leadership = []
         this._received = new Map
         this._frames = new Map
         this._maximumMessages = 256
@@ -159,6 +159,15 @@ class Register {
             this._received.set(node, version)
         }
 
+        const system = []
+        if (this._leadership.length != 0) {
+            system.push({
+                method: 'leadership',
+                id: this._id,
+                leaders: this._leadership.shift()
+            })
+        }
+
         // Create a packet to send to all of our peers, but not ourselves.
         const envelope = {
             to: this._leaders.filter(node => node != this._id),
@@ -166,7 +175,7 @@ class Register {
             version: version,
             node: this._id,
             messages: {
-                system: [],
+                system: system,
                 user: messages,
             },
             receipts: [ ...this._received ]
@@ -292,18 +301,23 @@ class Register {
     receive ({ version, node, messages, receipts, leaders }) {
         // If the version is the current version we process it.
         if (version == this._version) {
-            // Here we assume that we will only ever grow.
-            if (leaders.length > this._leaders.length) {
-                if (this._sending) {
-                    this._outbox.push({
-                        to: leaders.filter(id => !~this._leaders.indexOf(id)),
-                        version: version,
-                        node: this._id,
-                        messages: frame.messages.get(this.id),
-                        receipts: [ ...this._received ]
-                    })
+            for (const message of messages.system) {
+                switch (message.method) {
+                // Here we assume that we will only ever grow.
+                case 'leadership': {
+                        if (this._sending) {
+                            this._outbox.push({
+                                to: message.leaders.filter(id => !~this._leaders.indexOf(id)),
+                                version: version,
+                                node: this._id,
+                                messages: frame.messages.get(this.id),
+                                receipts: [ ...this._received ]
+                            })
+                        }
+                        this._leaders = leaders
+                        break
+                    }
                 }
-                this._leaders = leaders
             }
             // We may be receiving an incoming message, so we send a message and
             // prime it with a receipt for the node that called us.
