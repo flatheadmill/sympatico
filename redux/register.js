@@ -165,7 +165,10 @@ class Register {
             leaders: this._leaders.slice(),
             version: version,
             node: this._id,
-            messages: messages,
+            messages: {
+                system: [],
+                user: messages,
+            },
             receipts: [ ...this._received ]
         }
 

@@ -49,13 +49,13 @@ require('proof')(2, okay => {
         leaders: [ 0 ],
         version: 0,
         node: 0,
-        messages: [{ a: 1 }],
+        messages: { system: [], user: [{ a: 1 }] },
         receipts: [ [ 0, 0 ] ]
     }], 'packets')
     okay(dump(registers[0].log.splice(0)), [{
         version: 0,
         leaders: [ 0 ],
-        messages: { 0: [{ a: 1 }] },
+        messages: { 0: { system: [], user: [{ a: 1 }] } },
         receipts: { 0: { '0': 0 } }
     }], 'frame')
 })
