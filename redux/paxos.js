@@ -1,6 +1,23 @@
-const Promise = require('./promise')
-
 class Paxos {
+    static Promise = class {
+        constructor (id, Date = Date) {
+            this.id = id
+            this._Date = Date
+        }
+
+        static compare (left, right) {
+            const compare = (left[0] > right[0]) - (left[0] < right[0])
+            if (compare == 0) {
+                return (left[1] > right[1]) - (left[1] < right[1])
+            }
+            return compare
+        }
+
+        create () {
+            return [ this._Date.now(), this.id ]
+        }
+    }
+
     constructor ({ outbox, startTime, assembly, leaders, promise }) {
         this.members = null
         this._outbox = outbox
@@ -53,7 +70,7 @@ class Paxos {
         if (
             proposal.startTime == this._startTime &&
             proposal.assembly == this._assembly &&
-            Promise.compare(proposal.promise, this._register.promise) > 0
+            Paxos.Promise.compare(proposal.promise, this._register.promise) > 0
         ) {
             this._outbox.push({
                 method: 'promised',
@@ -72,17 +89,17 @@ class Paxos {
         if (
             promised.startTime == this._startTime &&
             promised.assembly == this._assembly &&
-            Promise.compare(promised.promise, this._proposed) == 0
+            Paxos.Promise.compare(promised.promise, this._proposed) == 0
         ) {
             this._promises.set(promised.id, promised)
             if (this._promises.size == Math.floor(this._leaders.length / 2 + 1)) {
                 let accepted = { promise: [ 0, 0 ] }
                 for (const promised of this._promises.values()) {
-                    if (Promise.compare(promised.register.promise, accepted.promise) > 0) {
+                    if (Paxos.Promise.compare(promised.register.promise, accepted.promise) > 0) {
                         accepted = promised.register
                     }
                 }
-                if (Promise.compare(accepted.promise, [ 0, 0 ]) == 0) {
+                if (Paxos.Promise.compare(accepted.promise, [ 0, 0 ]) == 0) {
                     accepted = this._proposal
                 }
                 this._outbox.push({
@@ -100,7 +117,7 @@ class Paxos {
         if (
             message.startTime == this._startTime &&
             message.assembly == this._assembly &&
-            Promise.compare(message.promise, this._promised) == 0
+            Paxos.Promise.compare(message.promise, this._promised) == 0
         ) {
             this._register = message.register
             this._outbox.push({

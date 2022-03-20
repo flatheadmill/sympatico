@@ -1,6 +1,13 @@
-require('proof')(2, okay => {
-    const Promise = require('../../redux/promise')
+require('proof')(6, okay => {
     const Paxos = require('../../redux/paxos')
+    {
+        const promise = new Paxos.Promise(0, { now: () => 0 })
+
+        okay(promise.create(), [ 0, 0 ], 'create')
+        okay(Paxos.Promise.compare([ 0, 0 ], [ 0, 0 ]), 0, 'compare equal')
+        okay(Paxos.Promise.compare([ 1, 0 ], [ 0, 0 ]), 1, 'compare tiemstamp greater than')
+        okay(Paxos.Promise.compare([ 0, 1 ], [ 0, 0 ]), 1, 'compare id greater than')
+    }
     {
         let now = 1
         const owners = [ 0, 1 ].map(id => {
@@ -12,7 +19,7 @@ require('proof')(2, okay => {
                     leaders: [ 0, 1, 2 ],
                     startTime: 0,
                     assembly: 0,
-                    promise: new Promise(id, { now: () => now })
+                    promise: new Paxos.Promise(id, { now: () => now })
                 })
             }
         })
