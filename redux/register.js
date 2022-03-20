@@ -1,5 +1,192 @@
 const assert = require('assert')
 
+// Completely forgot how this thing works, so some bullet points until the
+// algorithm loads into memory.
+
+// * There was some aspect in student that was about voting someone off the
+// island, but that was all about rejecting an submissions from that participant
+// that were in a partial state.
+// * Still can't remember how it is two-phase.
+// * No idea what leadership means here. Vaguely remember realizing that what I
+// really had was a "leadership" and tie-breakers. These days I'd want to
+// describe participants as being synchronous or asynchronous replicas, so maybe
+// rewrite the documentation in those terms.
+// * For some reason I needed a paxos, not a multi-paxos, just a paxos, and
+// that's not done, so I can finish that while I remember the rest of it.
+
+// Coming back to me.
+
+// Start off with a glossary. If you really hate a term you can change it later,
+// but you can't change it from sentance to sentance as you decide on the
+// perfect term.
+
+// * sympatico &mdash; what we call our algorithm.
+// * paxos &mdash; paxos used for elections.
+// * node &mdash; Deal with it.
+// * quorum &mdash; collection of nodes participating in sympatico.
+// * sync node &mdash; Node actively participating in symatico.
+// * async node &mdash; Node following the active participants, stand by or
+// getting up to speed to participate.
+// * peer &mdash; a sync node participate in sympatico that is not the one we're
+// talking about.
+// * frame &mdash; a round of messages in the sympatico algorithm.
+// * frame element &mdash; an entry in the frame for a specific node.
+// * version &mdash; a contiguous integer sequence to order frames.
+// * ack array &mdash; an array of the greatest version received from each node
+// by a node sent by a node in the frame.
+// * envelope &mdash; our network message, which is frame and ack array.
+// * message &mdash; a user or system message, the data we want to replicate.
+// * log &mdash; the algorithm output, an atomic log of messages.
+// * commit &mdash; the act of recording a message and writing it to the log.
+
+// This is written to load this into my head when I revisit this code. It is not
+// general documentation.
+//
+// The register manages frames. There is a series of frames. One frame follows
+// another. They are given a version number. The number increases one step at a
+// time, it is a series of contiguous integers. A register will not send a frame
+// until it has received acknowledgments from all the other sync nodes for the
+// last frame it send.
+//
+// An envelope includes a frame and an ack array.
+//
+// To send a user or system message a sync node waits until it is able to send
+// the next frame version. It then sends an envelope with the message and the
+// current ack array.
+//
+// If no other sync node has messages to send at this moment in time they will
+// be idle. When they receive the message they will record the frame message
+// update their internal ack array and send a frame with no messages and their
+// updated ack array. The sender will receive the frames. It will see that all
+// the other sync nodes have acknowledged the message and it will commit the
+// message to the log.
+//
+// When the system is not under load, a write is as fast as the slowest
+// connection between two nodes.
+//
+// If a node sends a message when a peer sync node also sends a message they
+// will use the same version number for their frames. Thus, it will not be the
+// case that the frame that the sender receives will have acknowledgements form
+// all of the peers when that version completes. Therefore, it must immediately
+// send a frame with an updated ack array whether or not there are messages to
+// send so that the message can be committed.
+//
+// And that is that for the crux of symaptico. This appears to be implemented.
+//
+// We have implemented two generic message consumers. One is a clerk that will
+// check to see if we need to send the ack array regardless of pending messages,
+// to flush the message. The other will check to see if we have all the
+// acknowledgements for a frame and if so, it will commit all the messages from
+// all the sync nodes for that frame.
+//
+// ### Objectives
+//
+// Objectives for the Node.js version of Sympatico is to create a go by for a
+// Rust implementation of Sympatico so that your humble author is not attempting
+// to tease out this implementation in a language he is not familiar with. The
+// Node.js version is a throw away and not not suitable for production. Nothing
+// written in Node.js is suitable for production.
+//
+// The objective of Sympatico is to reduce the latency of a consensus algorithm
+// across data centers for administrative applications of the algorithm. The end
+// product is an implementation of `etcd` in Rust that can be used by Kubernetes
+// to implement a cluster across data centers.
+//
+// Sympatico itself, or at least the parts I am discussing today, is not focused
+// on this `etcd` implementation. It is instead focused on implementing an
+// atomic log. I'll discuss the objectives for the atomic log and will
+// frequently be stating no goals for the atomic log. These non-goals for the
+// atomic log may or may not be non-goals for the ultimate goal.
+
+// For example, it is a non-goal of the atomic log to save state to persistent
+// storage, but it is likely a goal of an application of the atomic log. This is
+// the last time I'll make a disclaimer of this sort. Non-goal stated.
+//
+// We only want an atomic log to drive applications. When the log message has
+// been consumed by an application it can be discarded. If the application is in
+// a bad state where it manages to lose the atomic log messages through it's own
+// incompetence it should crash restart and an rejoin.
+//
+// Thus, we are creating an in-memory data structure. Perhaps this is the only
+// significant caveat and disclaimer.
+//
+// Another related non-goal is the preservation of identity. Every time a node
+// joins it is given a new identifier. We are not trying to reconstruct a
+// network topology. sympatico has no knowledge that data center A went offline
+// and that the node that just arrived is data center A and everything is
+// hunky-dory. TODO Probably do need an awareness at the paxos level.
+//
+// Okay, some hand waving now, because this is where I left off. The sympatico
+// algorithm can probably handle on boarding. It will bring a new node in as an
+// async node and then when the async node. The atomic log generated by this
+// node will not be a synchronous log, it will not be "real-time." This will
+// give the application time to initialize and request any information in needs
+// to get up to speed to participate in the synchronous processing of messages.
+//
+// Once the application is confident that it can process messages synchronously,
+// it will mark it's sympatico node as "acclimated." At that point the node will
+// begin to receive messages synchronously.
+//
+// TODO Determine how to implement back-pressure because we cannot implement
+// load shedding. Does the application allow messages to fill an in-memory queue
+// sending acknowledgements immediately? Does it process each message one at a
+// time. Probably a matter of having a receipt queue size, but some applications
+// may want to ensure they've written each message to persistent storage before
+// they allow sympatico to continue. &mdash; Sounds like a decision, please
+// revisit soon and mark as decided.
+//
+// When a node cannot receive frames from any one of its peers it freezes. It
+// could be that the peer has crashed and if that is the case then their may be
+// a way to add node removal to sympatico, but it could also be the case that
+// the network connection between two nodes is broken, but those two nodes can
+// talk to all other nodes, so now we have a situation where one of them needs
+// to get voted out of the quorum. For voting we need a consensus algorithm and
+// we will use paxos.
+//
+// When a sync node has stalled it will look at its acknowledgements and if
+// there is a minority of missing acknowledgements it will attempt to vote them
+// out of the quorum by initiating a round of paxos. If there is a majority of
+// missing acknowledgements then it will do nothing and wait, it is likely
+// network isolated. (Okay, but sympatico is not paxos, it should try to run
+// paxos and see what paxos has to say about it.)
+//
+// Thus, each node has sympatico and paxos running.
+//
+// What does this provide? We can have a three node cluster where we are able to
+// lose a single node. We are unable to lose more than a single node because
+// with two instances running there is none to break a tie in paxos.
+//
+// For a basic failover H/A setup we can run sympatico/paxos with two nodes and
+// run just paxos on a tie-breaker node. If you want to run three
+// sympatico/paxos nodes and be able to lose two at one time, you need to run
+// two tie-breaker nodes. For our data center applications, all nodes should be
+// in different data-centers, whether sympatico/paxos or tie-breaker paxos
+// nodes. The network latency of the sympatico/paxos nodes will affect the
+// performance of the atomic log, but the tie-breaker nodes are only used to
+// resolve administrative issues, (we could call this a control plane,) and
+// latency is not as important. The tie-breakers could live on the smallest
+// instance size available in a cloud provider.
+//
+// Finally, you could run three sympatico/paxos nodes and accept that you can
+// only lose one at a time because of the paxos quorum. Finally, we could
+// completely separate the control plane from the data plane and have paxos run
+// separately from sympatico and have 1 or more sympatico nodes with no upper
+// limit.
+//
+// For a proof of concept we will do the three sympatico/paxos nodes. We'll
+// return to the other options when we consider our packaging.
+
+// Ultimately, it would be nice to have the ability to scale like MicroK8s where
+// worker nodes arriving in a different data center register and that second
+// data becomes a failover. In this case, the second data center would run
+// a sympatico/paxos and a tie-breaker so that the event of a failure of the
+// primary the secondary can vote itself the leader. (Oh, wait, but in the event
+// of the failure of the secondary, the primary freezes, so nope, we really need
+// to spread things out. Maybe we can offer a control plane service to get
+// people started quickly and offer a hosted control plane service to fund
+// development of the algorithm.)
+
+//
 class Register {
     constructor (id, publisher, consumers) {
         this._id = id
@@ -29,7 +216,8 @@ class Register {
     // matter of sending an embaraction message through the atomic log. Each
     // member will get the message but the atomic log will be processed probably
     // asynchronously, so that we need to have only one member suggest it, or
-    // else filter out subsequent requests by the cookie.
+    // else filter out subsequent requests by the cookie. (We can filter it out
+    // by a max id so that multiple members can suggest.)
     //
     // Everyone can suggest it and then they can do a reduce where they remove
     // it once they have joined.
@@ -111,6 +299,15 @@ class Register {
         }
     }
 
+    // "Failure while growing is tricky..." That's true. We are talking about
+    // failure here, not an event that can be scheduled deterministically while
+    // reading the atomic log. You're in the process of expanding your quorum
+    // and one of the participants dies. What's the problem? Suppose it is a
+    // question of whether the new quorum member is going to still become part
+    // of the qurom or whether we back-off and try again later.
+
+    // ---
+
     // Simply set the leaders to the new leaders. Everyone recieves the new
     // leaders. The new peer will not end up with a broken frame at all. They
     // will receive all the values for the current frame, possibly with some
@@ -126,6 +323,8 @@ class Register {
     // countdown. Countdown becomes complete. We probably have new leadership
     // queued here so the queue is wiped. The leadership is what it is, so the
     // atomic log should work from that.
+
+    //
     grow (leaders) {
         if (leaders.length == 1) {
             this._leaders = leaders
@@ -138,6 +337,8 @@ class Register {
     // We send a message. If this is a response to a message from another node,
     // `node` is the id of the node initiated this frame. We will record its
     // receipt for the current version.
+
+    //
     _send (node = null) {
         // We are now sending.
         this._sending = true
@@ -159,6 +360,8 @@ class Register {
             this._received.set(node, version)
         }
 
+        // We send leadership messages as system messages, a separate collection
+        // from user messages, but still part of the frame element structure.
         const system = []
         if (this._leadership.length != 0) {
             system.push({
@@ -181,14 +384,18 @@ class Register {
             receipts: [ ...this._received ]
         }
 
-        this._publisher.push(envelope)
+        // What is the difference between `this._frames.set` and `this.receive`?
         this._frames.set(version, {
             version: version,
             leaders: this._leaders,
             messages: new Map,
             receipts: new Map
         })
+
         this.receive(envelope)
+
+        // Send the message to our peers over the network.
+        this._publisher.push(envelope)
     }
 
     // Assuming a traditional paxos on a low volume network. If a leader sends a
@@ -204,6 +411,13 @@ class Register {
     // If two leaders in a two leader both send messages, they cannot learn.
     // Three leader group the same. Five leader group they can learn.
 
+    // REVISIT &mdash; What? If two leaders, can we call them nodes instead of
+    // participants, call the doggos, I don't care, just not leaders, send
+    // messages and get acks from three...  Two dudes send messages and three
+    // dudes ack so we now have two dues thinking they have the frame, but they
+    // don't because they didn't get each others messgaes. It must always be
+    // unanimous and this is wrong.
+
     // But, if all we are sending is the maxium frame, then how can tell our
     // peer in the traditional paxos that, yes, we know about the message we
     // just sent you? This one particular message is known to me, now it is
@@ -214,6 +428,8 @@ class Register {
     // This it is the case that we must include in our receipts a map of
     // versions to a map of nodes to a set of responses we've received, but only
     // if those responses are to envelopes that contain messages.
+
+    // REVISIT This is so useless. Obviously sketching things out. Delete it.
 
     //
     _check () {
