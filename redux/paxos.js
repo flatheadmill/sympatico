@@ -146,11 +146,6 @@ class Paxos {
             }
         }
     }
-
-    response (owner, proposal, response) {
-        if (response.accepted) {
-        }
-    }
 }
 
 module.exports = Paxos
