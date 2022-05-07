@@ -11,6 +11,18 @@ pub struct Promise {
 impl Promise {
     // https://users.rust-lang.org/t/three-way-comparison-in-rust/2648
     pub fn compare(left: [u32; 2], right: [u32; 2]) -> std::cmp::Ordering {
+        if left[0] < right[0] {
+            return Less
+        }
+        if left[0] > right[0] {
+            return Greater
+        }
+        if left[1] < right[1] {
+            return Less
+        }
+        if left[1] > right[1] {
+            return Greater
+        }
         return Equal
     }
     pub fn create(&self) -> [u32; 2] {
@@ -79,6 +91,10 @@ impl Log {
         self.check();
     }
 
+    pub fn len(& self) -> usize {
+        self.consumer.len()
+    }
+
     pub fn replay(&self, version: u64, node: u32, index: u32, consumer: &mut VecDeque<Rc<Entry>>) {
         let mut i = 0;
         loop {
@@ -106,7 +122,7 @@ mod tests {
     use crate::Promise;
     use std::collections::VecDeque;
     use std::rc::Rc;
-    use std::cmp::Ordering::{Less, Equal, Greater};
+    use std::cmp::Ordering::{Equal};
 
     #[test]
     fn it_logs() {
@@ -125,7 +141,8 @@ mod tests {
         assert_eq!(log.minimum(), 0);
         let mut replay: VecDeque<Rc<Entry>> = VecDeque::new();
         log.replay(1, 0, 0, &mut replay);
-        assert_eq!(*replay.pop_front().unwrap(), Entry { version: 1, node: 0, index: 1, value: 2 })
+        assert_eq!(*replay.pop_front().unwrap(), Entry { version: 1, node: 0, index: 1, value: 2 });
+        assert_eq!(log.len(), 0);
     }
 
     #[test]
